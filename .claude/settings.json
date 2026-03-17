@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker compose *)",
+      "Bash(spacetime *)",
+      "Bash(npm *)",
+      "Bash(npx tsc *)",
+      "Bash(make *)"
+    ]
+  }
+}
