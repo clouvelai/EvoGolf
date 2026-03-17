@@ -1,4 +1,4 @@
-import { SwingParams, Vec3 } from './types.js';
+import { type SwingParams, type Vec3 } from './types.js';
 import { MAX_SPEED, GRAVITY, DT, MAX_SIM_STEPS } from '../constants.js';
 
 /**

@@ -1,6 +1,6 @@
 .PHONY: up down publish generate dev reset logs
 
-STDB = --anonymous -s local
+STDB = -s local
 
 up:
 	docker compose up -d

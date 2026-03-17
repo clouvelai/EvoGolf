@@ -1,4 +1,4 @@
-import { TreeNode, SwingParams, EvalContext, isFuncNode, isTerminalNode } from './types.js';
+import { type TreeNode, type SwingParams, type EvalContext, isFuncNode, isTerminalNode } from './types.js';
 
 /**
  * Evaluate a GP tree node to produce a numeric value.

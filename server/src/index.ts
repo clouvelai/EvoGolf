@@ -178,7 +178,7 @@ export const initPopulation = spacetimedb.reducer(
     const genId = genRow.genId;
 
     // Generate random trees using ramped half-and-half
-    const trees = rampedHalfAndHalf(popSize);
+    const trees = rampedHalfAndHalf(ctx.random, popSize);
 
     const genomeIds: number[] = [];
 
