@@ -64,6 +64,12 @@ export default function App() {
       }));
   }, [generations]);
 
+  // Genomes in current generation
+  const currentGenGenomes = useMemo(() => {
+    if (currentGenId == null) return [];
+    return genomes.filter((g) => g.genId === currentGenId);
+  }, [genomes, currentGenId]);
+
   // Selected genome
   const selectedGenome = useMemo(() => {
     if (selectedGenomeId == null) return null;
@@ -200,6 +206,9 @@ export default function App() {
       {/* ── Genome Tree Panel ── */}
       <GenomeTreePanel
         genome={selectedGenome}
+        genomes={currentGenGenomes}
+        selectedGenomeId={selectedGenomeId}
+        onSelectGenome={handleSelectGenome}
         onSponsor={handleSponsor}
         sponsorDisabled={selectedGenomeId == null}
       />
