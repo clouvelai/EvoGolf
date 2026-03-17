@@ -15,9 +15,9 @@ This roadmap tracks progress across conversations. At the start of each session:
 | # | Phase | Branch | Status | Depends on | Verification |
 |---|-------|--------|--------|------------|--------------|
 | 1 | Foundation | `main` | DONE | — | Course renders in browser |
-| 2 | GP Engine | `feat/gp-engine` (worktree) | NOT STARTED | Phase 1 | CLI: init_population + simulate_shots work |
-| 3 | 3D Visualization | `feat/3d-viz` (worktree) | NOT STARTED | Phase 1 | Balls animate along trajectories |
-| — | Merge 2+3 | `main` | NOT STARTED | Phases 2, 3 | tsc passes, app loads |
+| 2 | GP Engine | `feat/gp-engine` (worktree) | DONE | Phase 1 | CLI: init_population + simulate_shots work |
+| 3 | 3D Visualization | `feat/3d-viz` (worktree) | DONE | Phase 1 | Balls animate along trajectories |
+| — | Merge 2+3 | `main` | DONE | Phases 2, 3 | tsc passes, app loads |
 | 4 | GP Operators | `main` | NOT STARTED | Merge 2+3 | 5+ generations, fitness improves |
 | 5 | UI & Polish | `main` | NOT STARTED | Phase 4 | Full game loop playable |
 
@@ -31,10 +31,13 @@ These touch **zero overlapping files**, so they run in parallel worktrees and me
 
 ## Current State
 
-**Next action:** Spawn parallel worktrees for Phase 2 + Phase 3
+**Next action:** Start Phase 4 (GP Operators)
 
 ---
 
 ## Completion Log
 
-- **Phase 1** (2026-03-17): Foundation complete. Key deviations: CLI uses `--anonymous -s local` (not `--host`), `spacetime generate` uses `--module-path` (no server needed), indexes require `accessor` field, no-arg reducers need `{}` on client. Docker image: clockworklabs/spacetime, CLI v2.0.5, SDK v2.0.4.
+- **Phase 1** (2026-03-17): Foundation complete. Key deviations: CLI uses `-s local` (not `--host`), `spacetime generate` uses `--module-path` (no server needed), indexes require `accessor` field, no-arg reducers need `{}` on client. Docker image: clockworklabs/spacetime, CLI v2.0.5, SDK v2.0.4.
+- **Phase 2** (2026-03-17): GP Engine complete. Key deviation: `Math.random` banned in SpacetimeDB modules — must use `ctx.random` (Rng param threaded through all GP functions). `spacetime call` uses positional args: `spacetime call evogolf init_population 1 12 -s local`.
+- **Phase 3** (2026-03-17): 3D Visualization complete. BallSwarm (InstancedMesh), TrajectoryLines (drei Line), useBallAnimation hook. All components handle empty state.
+- **Merge 2+3** (2026-03-17): Clean merge, zero conflicts. Post-merge fix: `import type` for SpacetimeDB bundler, persistent identity via `spacetime login --server-issued-login local`. Verified: 12 genomes, 2260 trajectory points, all fitness scores computed.

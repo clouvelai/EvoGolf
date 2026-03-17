@@ -250,7 +250,9 @@ throw new Error(`Generation ${genId} not found`);
 - **`export default spacetimedb`:** The schema must be the default export or the module won't load.
 - **Index `accessor`:** Every index definition needs `accessor: 'name'` — this is how you reference it in code: `ctx.db.table.accessorName.filter(...)`.
 - **No-arg reducers:** Client bindings always expect one argument. For reducers with no params, call with `{}`: `conn.reducers.createGame({})`.
-- **`--anonymous -s local`:** All spacetime CLI commands need these flags for local Docker dev. The Makefile wraps this as `$(STDB)`.
+- **`-s local`:** All spacetime CLI commands need this flag for local Docker dev. The Makefile wraps this as `$(STDB)`. Use `spacetime login --server-issued-login local` for persistent identity (re-run after Docker volume wipe).
+- **`Math.random` is banned:** SpacetimeDB modules cannot use `Math.random`. Use `ctx.random()` for floats [0,1) and `ctx.random.integerInRange(min, max)` for ints [min,max]. Thread a `Rng` parameter through any function that needs randomness.
+- **`spacetime call` uses positional args:** `spacetime call evogolf init_population 1 12 -s local` (not JSON objects).
 
 ---
 
