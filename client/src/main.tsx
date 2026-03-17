@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection, tables } from './module_bindings';
 import App from './App';
+import './styles/ui.css';
 
 const connectionBuilder = DbConnection.builder()
   .withUri('ws://localhost:3000')

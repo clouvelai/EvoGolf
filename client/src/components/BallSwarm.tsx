@@ -7,19 +7,22 @@ import { useGenerationData } from '../hooks/useGenerationData';
 const MAX_BALLS = 64;
 const BALL_RADIUS = 0.4;
 const SELECTED_SCALE = 1.3;
-const ANIMATION_DURATION = 4.0;
+const BASE_ANIMATION_DURATION = 4.0;
 
 type BallSwarmProps = {
   selectedGenomeId: number | null;
   onSelectGenome: (genomeId: number | null) => void;
   currentGenId: number | null;
+  speedMultiplier?: number;
 };
 
 export default function BallSwarm({
   selectedGenomeId,
   onSelectGenome,
   currentGenId,
+  speedMultiplier = 1,
 }: BallSwarmProps) {
+  const ANIMATION_DURATION = BASE_ANIMATION_DURATION / speedMultiplier;
   const { currentBalls, genomeMap, trajectoryMap } = useGenerationData(currentGenId);
 
   const meshRef = useRef<THREE.InstancedMesh>(null!);

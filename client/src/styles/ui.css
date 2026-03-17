@@ -1,0 +1,148 @@
+/* ── EvoGolf UI Panel System ── */
+
+.ui-panel {
+  background: rgba(8, 24, 40, 0.85);
+  border: 1px solid rgba(102, 204, 255, 0.2);
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  color: #e0e8f0;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  padding: 12px;
+}
+
+.ui-panel-header {
+  color: #ffd700;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  margin-bottom: 8px;
+}
+
+/* ── Buttons ── */
+
+.ui-btn {
+  background: rgba(20, 40, 60, 0.9);
+  border: 1px solid rgba(102, 204, 255, 0.3);
+  border-radius: 6px;
+  color: #e0e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.ui-btn:hover:not(:disabled) {
+  background: rgba(30, 60, 90, 0.9);
+  border-color: rgba(102, 204, 255, 0.6);
+  box-shadow: 0 0 8px rgba(102, 204, 255, 0.2);
+}
+
+.ui-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.ui-btn--gold {
+  border-color: rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+}
+
+.ui-btn--gold:hover:not(:disabled) {
+  border-color: rgba(255, 215, 0, 0.7);
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.25);
+}
+
+.ui-btn--green {
+  border-color: rgba(68, 255, 170, 0.4);
+  color: #44ffaa;
+}
+
+.ui-btn--green:hover:not(:disabled) {
+  border-color: rgba(68, 255, 170, 0.7);
+  box-shadow: 0 0 8px rgba(68, 255, 170, 0.25);
+}
+
+.ui-btn--pink {
+  border-color: rgba(255, 85, 170, 0.4);
+  color: #ff55aa;
+}
+
+.ui-btn--pink:hover:not(:disabled) {
+  border-color: rgba(255, 85, 170, 0.7);
+  box-shadow: 0 0 8px rgba(255, 85, 170, 0.25);
+}
+
+.ui-btn--active {
+  animation: ui-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes ui-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(102, 204, 255, 0.3); }
+  50% { box-shadow: 0 0 14px rgba(102, 204, 255, 0.6); }
+}
+
+/* ── Badges ── */
+
+.ui-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ui-badge--random    { background: rgba(102, 204, 255, 0.2); color: #66ccff; }
+.ui-badge--replication { background: rgba(255, 215, 0, 0.2); color: #ffd700; }
+.ui-badge--crossover { background: rgba(68, 255, 170, 0.2); color: #44ffaa; }
+.ui-badge--mutation  { background: rgba(255, 85, 170, 0.2); color: #ff55aa; }
+
+/* ── Scrollbar ── */
+
+.ui-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.ui-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ui-scroll::-webkit-scrollbar-thumb {
+  background: rgba(102, 204, 255, 0.25);
+  border-radius: 2px;
+}
+
+/* ── Win overlay ── */
+
+@keyframes win-scale-in {
+  0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+
+.win-overlay {
+  animation: win-scale-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Phase dots ── */
+
+.phase-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(102, 204, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.phase-dot--active {
+  background: #66ccff;
+  box-shadow: 0 0 8px rgba(102, 204, 255, 0.6);
+}
+
+.phase-dot--done {
+  background: rgba(68, 255, 170, 0.6);
+}
