@@ -6,11 +6,15 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AdvanceGenerationReducer from "../advance_generation_reducer";
 import CreateGameReducer from "../create_game_reducer";
 import InitPopulationReducer from "../init_population_reducer";
+import SetWildcardReducer from "../set_wildcard_reducer";
 import SimulateShotsReducer from "../simulate_shots_reducer";
 
+export type AdvanceGenerationParams = __Infer<typeof AdvanceGenerationReducer>;
 export type CreateGameParams = __Infer<typeof CreateGameReducer>;
 export type InitPopulationParams = __Infer<typeof InitPopulationReducer>;
+export type SetWildcardParams = __Infer<typeof SetWildcardReducer>;
 export type SimulateShotsParams = __Infer<typeof SimulateShotsReducer>;
 

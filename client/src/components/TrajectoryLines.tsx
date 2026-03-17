@@ -14,7 +14,6 @@ export default function TrajectoryLines({
 }: TrajectoryLinesProps) {
   const { currentBalls, genomeMap, trajectoryMap } = useGenerationData(currentGenId);
 
-  // Build line data for each ball
   const lines = useMemo(() => {
     return currentBalls
       .map((ball) => {
@@ -57,8 +56,8 @@ export default function TrajectoryLines({
           key={line.key}
           points={line.points}
           color={line.color}
-          lineWidth={line.isSelected ? 3 : 1}
-          opacity={line.isSelected ? 1 : 0.3}
+          lineWidth={line.isSelected ? 4 : 2}
+          opacity={line.isSelected ? 1 : 0.6}
           transparent
         />
       ))}

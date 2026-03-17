@@ -26,6 +26,7 @@ export type Vec3 = { x: number; y: number; z: number };
 export type EvalContext = {
   wind_x: number;
   wind_z: number;
+  activeParam: TerminalName | null;
 };
 
 export function isFuncNode(node: TreeNode): node is FuncNode {

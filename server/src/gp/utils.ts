@@ -29,6 +29,37 @@ export function nodeCount(node: TreeNode): number {
 }
 
 /**
+ * Replace the node at a given flat index (pre-order traversal) using a replacer function.
+ * Returns a new tree (does not mutate the original).
+ */
+export function replaceAtIndex(node: TreeNode, targetIdx: number, replacer: (n: TreeNode) => TreeNode): TreeNode {
+  if (targetIdx === 0) return replacer(node);
+
+  if (!isFuncNode(node)) return node;
+
+  let remaining = targetIdx - 1;
+  const newChildren: TreeNode[] = [];
+  let replaced = false;
+
+  for (const child of node.children) {
+    if (replaced) {
+      newChildren.push(child);
+      continue;
+    }
+    const childSize = nodeCount(child);
+    if (remaining < childSize) {
+      newChildren.push(replaceAtIndex(child, remaining, replacer));
+      replaced = true;
+    } else {
+      newChildren.push(child);
+      remaining -= childSize;
+    }
+  }
+
+  return { op: node.op, children: newChildren };
+}
+
+/**
  * Clamp a tree to MAX_TREE_DEPTH by replacing any subtree
  * that exceeds the depth limit with a random terminal.
  */

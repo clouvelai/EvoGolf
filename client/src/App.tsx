@@ -41,19 +41,55 @@ export default function App() {
   }, []);
 
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#1a1a2e' }}>
+    <div style={{ width: '100vw', height: '100vh', background: '#081828' }}>
       {!isActive && (
         <div style={{
           position: 'absolute', top: '50%', left: '50%',
           transform: 'translate(-50%, -50%)',
-          color: 'white', fontSize: '1.2rem',
+          color: 'white', fontSize: '1.2rem', zIndex: 10,
         }}>
           Connecting to SpacetimeDB...
         </div>
       )}
-      <Canvas camera={{ position: [0, 80, 100], fov: 50 }}>
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[50, 100, 50]} intensity={1} />
+      <Canvas
+        camera={{ position: [-45, 50, -30], fov: 45, near: 0.1, far: 500 }}
+        gl={{ antialias: true }}
+      >
+        {/* Sky / background */}
+        <color attach="background" args={['#081828']} />
+        <fog attach="fog" args={['#0a1e35', 160, 320]} />
+
+        {/* Lighting — golden hour warmth */}
+        <hemisphereLight
+          args={['#4488aa', '#1a4020', 0.4]}
+        />
+        <ambientLight intensity={0.5} color="#c0d4e8" />
+        <directionalLight
+          position={[60, 80, 30]}
+          intensity={1.7}
+          color="#fff0d0"
+          castShadow={false}
+        />
+        {/* Fill light aimed at far shore so trees aren't silhouettes */}
+        <directionalLight
+          position={[-30, 50, 160]}
+          intensity={0.6}
+          color="#aac8e0"
+        />
+        {/* Cool fill from opposite side */}
+        <directionalLight
+          position={[-40, 40, -20]}
+          intensity={0.3}
+          color="#6bb8e0"
+        />
+        {/* Subtle up-light to illuminate balls in flight */}
+        <pointLight
+          position={[0, -5, 70]}
+          intensity={0.5}
+          color="#2a6090"
+          distance={150}
+        />
+
         <CourseGround course={courses[0] ?? null} />
         <BallSwarm
           selectedGenomeId={selectedGenomeId}
@@ -65,8 +101,10 @@ export default function App() {
           currentGenId={currentGenId}
         />
         <OrbitControls
-          target={[0, 0, 68]}
-          maxPolarAngle={Math.PI / 2.2}
+          target={[0, 2, 55]}
+          maxPolarAngle={Math.PI / 2.1}
+          minDistance={20}
+          maxDistance={200}
         />
       </Canvas>
     </div>

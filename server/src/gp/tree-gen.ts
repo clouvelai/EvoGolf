@@ -13,7 +13,7 @@ function randomElement<T>(rng: Rng, arr: T[]): T {
   return arr[rng.integerInRange(0, arr.length - 1)];
 }
 
-function randomTerminal(rng: Rng): TerminalNode {
+export function randomTerminal(rng: Rng): TerminalNode {
   const name = randomElement(rng, TERMINAL_NAMES);
   if (name === 'const') {
     const value = Math.round((rng() * 4 - 2) * 1000) / 1000; // [-2, 2]

@@ -1,18 +1,28 @@
-import { type TreeNode, type SwingParams, type EvalContext, isFuncNode, isTerminalNode } from './types.js';
+import { type TreeNode, type SwingParams, type EvalContext, type TerminalName, isFuncNode, isTerminalNode } from './types.js';
+
+const BASE_VALUES: Record<string, number> = {
+  launch_angle: 45,
+  power: 0.7,
+  spin_x: 0,
+  spin_z: 0,
+};
+
+const PARAM_TERMINALS: Set<string> = new Set(['launch_angle', 'power', 'spin_x', 'spin_z']);
 
 /**
  * Evaluate a GP tree node to produce a numeric value.
- * Terminal base values:
- *   launch_angle → 45, power → 0.7, spin_x → 0, spin_z → 0
- *   wind_x/wind_z → context wind values, const → its stored value
+ * Param terminals (launch_angle, power, spin_x, spin_z) return their base
+ * value only when they match ctx.activeParam, otherwise 0.
+ * Wind and const terminals are always active.
  */
 export function evaluateTree(node: TreeNode, ctx: EvalContext): number {
   if (isTerminalNode(node)) {
     switch (node.terminal) {
-      case 'launch_angle': return 45;
-      case 'power': return 0.7;
-      case 'spin_x': return 0;
-      case 'spin_z': return 0;
+      case 'launch_angle':
+      case 'power':
+      case 'spin_x':
+      case 'spin_z':
+        return node.terminal === ctx.activeParam ? BASE_VALUES[node.terminal] : 0;
       case 'wind_x': return ctx.wind_x;
       case 'wind_z': return ctx.wind_z;
       case 'const': return node.value ?? 0;
@@ -86,20 +96,16 @@ function clamp(v: number, min: number, max: number): number {
 }
 
 /**
- * Evaluate a tree 4 times (once per swing param) by using
- * the raw tree output and mapping it to swing parameters.
- * The tree's output is treated as a modifier applied to base values.
+ * Evaluate the tree 4 times with a different activeParam context each time.
+ * Each param terminal only contributes its base value when it matches the
+ * active param, giving the GP independent control over each swing parameter.
  */
 export function treeToSwingParams(tree: TreeNode, windX: number, windZ: number): SwingParams {
-  const ctx: EvalContext = { wind_x: windX, wind_z: windZ };
-  const rawValue = evaluateTree(tree, ctx);
-
-  // Map the single tree output to swing params via different transformations
-  // This gives each genome a unique swing character from its tree structure
-  const launch_angle = clamp(45 + rawValue * 10, 10, 80);
-  const power = clamp(0.7 + rawValue * 0.1, 0, 1);
-  const spin_x = clamp(rawValue * 0.3, -1, 1);
-  const spin_z = clamp(rawValue * 0.2, -1, 1);
-
-  return { launch_angle, power, spin_x, spin_z };
+  const base = { wind_x: windX, wind_z: windZ };
+  return {
+    launch_angle: clamp(evaluateTree(tree, { ...base, activeParam: 'launch_angle' }), 10, 80),
+    power:        clamp(evaluateTree(tree, { ...base, activeParam: 'power' }), 0, 1),
+    spin_x:       clamp(evaluateTree(tree, { ...base, activeParam: 'spin_x' }), -1, 1),
+    spin_z:       clamp(evaluateTree(tree, { ...base, activeParam: 'spin_z' }), -1, 1),
+  };
 }

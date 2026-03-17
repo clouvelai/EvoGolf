@@ -34,8 +34,10 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AdvanceGenerationReducer from "./advance_generation_reducer";
 import CreateGameReducer from "./create_game_reducer";
 import InitPopulationReducer from "./init_population_reducer";
+import SetWildcardReducer from "./set_wildcard_reducer";
 import SimulateShotsReducer from "./simulate_shots_reducer";
 
 // Import all procedure arg schemas
@@ -143,8 +145,10 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("advance_generation", AdvanceGenerationReducer),
   __reducerSchema("create_game", CreateGameReducer),
   __reducerSchema("init_population", InitPopulationReducer),
+  __reducerSchema("set_wildcard", SetWildcardReducer),
   __reducerSchema("simulate_shots", SimulateShotsReducer),
 );
 

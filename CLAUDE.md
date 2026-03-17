@@ -48,6 +48,7 @@ spacetime logs evogolf --anonymous -s local
 spacetime sql evogolf "SELECT * FROM generation" --anonymous -s local
 spacetime call evogolf create_game --anonymous -s local
 spacetime call evogolf init_population '{"holeId": 1, "popSize": 12}' --anonymous -s local
+spacetime call evogolf advance_generation '{"genId": 1}' --anonymous -s local
 
 # Client
 cd client && npm run dev
@@ -213,6 +214,13 @@ export const initPopulation = spacetimedb.reducer(
     // ...
   }
 );
+
+// --- Full reducer list ---
+// createGame()           — seed golf course (idempotent)
+// initPopulation(holeId, popSize) — gen random pop + simulate
+// simulateShots(genId)   — run physics on a generation
+// advanceGeneration(genId) — orchestrator: select → replicate elite → crossover → mutate → cleanup old trajectories → simulate new gen
+// setWildcard(genomeId)  — player picks a genome to force-include in next selection
 
 // --- CRUD inside reducers ---
 // Insert (autoInc fields: pass 0, DB assigns real value)
@@ -380,9 +388,23 @@ type SwingParams = {
 
 **Tree generation:** Ramped half-and-half — for depths 2 through `MAX_TREE_DEPTH`, half use "full" method (all branches to max depth), half use "grow" (random early termination). See PRD "init_population" for full spec.
 
-**Tree evaluation:** Recursive. Terminals return base values (`launch_angle`→45, `power`→0.7, etc.) or context values (wind). Operators combine children. Result maps to SwingParams. See PRD "GP Genome Tree Format".
+**Tree evaluation:** Context-sensitive 4-pass. The tree is evaluated once per swing param with `activeParam` set in `EvalContext`. Param terminals (`launch_angle`, `power`, `spin_x`, `spin_z`) return their base value only when they match `activeParam`, otherwise 0. Wind and const terminals are always active. This gives the GP independent control over each swing parameter.
 
 **Physics model:** See PRD "simulate_shots" for the full physics spec (gravity, drag, wind, bounce, roll).
+
+### GP Module Structure (`server/src/gp/`)
+
+```
+types.ts      — TreeNode, SwingParams, EvalContext, type guards
+tree-gen.ts   — rampedHalfAndHalf, generateFull, generateGrow, randomTerminal
+evaluate.ts   — evaluateTree (context-sensitive 4-pass), treeToSwingParams
+physics.ts    — simulateBall (trajectory generation)
+fitness.ts    — computeFitness, distanceToHole
+selection.ts  — tournamentSelection (with wildcard override)
+crossover.ts  — subtreeCrossover
+mutation.ts   — mutateTree (subtree / point / hoist, equal probability)
+utils.ts      — treeDepth, nodeCount, replaceAtIndex, clampTree, serializeTree, parseTree
+```
 
 ---
 
