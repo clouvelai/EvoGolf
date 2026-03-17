@@ -14,7 +14,7 @@ import GPControlPanel from './components/GPControlPanel';
 import WinOverlay from './components/WinOverlay';
 
 const HOLE_RADIUS = 0.5;
-const MAX_AUTO_GENS = 100;
+const MAX_AUTO_GENS = 1000;
 
 export default function App() {
   const { isActive, getConnection } = useSpacetimeDB();
@@ -41,12 +41,12 @@ export default function App() {
 
   const course = courses[0] ?? null;
 
-  // Current generation (highest genId)
+  // Current generation (highest genNumber — genId autoInc can wrap after republish)
   const currentGen = useMemo(() => {
     if (generations.length === 0) return null;
     let latest = generations[0];
     for (const gen of generations) {
-      if (gen.genId > latest.genId) latest = gen;
+      if (gen.genNumber > latest.genNumber) latest = gen;
     }
     return latest;
   }, [generations]);

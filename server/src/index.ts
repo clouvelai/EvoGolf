@@ -287,14 +287,21 @@ export const initPopulation = spacetimedb.reducer(
       throw new Error(`Golf course with holeId ${holeId} not found`);
     }
 
-    // Determine genNumber by finding max genNumber for this hole
-    let maxGenNumber = -1;
-    for (const gen of ctx.db.generation.iter()) {
-      if (gen.holeId === holeId && gen.genNumber > maxGenNumber) {
-        maxGenNumber = gen.genNumber;
+    // Clean up all previous game data for a fresh start
+    for (const tp of ctx.db.trajectoryPoint.iter()) ctx.db.trajectoryPoint.delete(tp);
+    for (const ball of ctx.db.golfBall.iter()) ctx.db.golfBall.delete(ball);
+    for (const genome of ctx.db.genome.iter()) ctx.db.genome.delete(genome);
+    for (const gen of ctx.db.generation.iter()) ctx.db.generation.delete(gen);
+    for (const evt of ctx.db.gpEvent.iter()) ctx.db.gpEvent.delete(evt);
+    // Reset player wildcards
+    for (const p of ctx.db.player.iter()) {
+      if (p.wildcardGenomeId > 0) {
+        ctx.db.player.delete(p);
+        ctx.db.player.insert({ identity: p.identity, name: p.name, wildcardGenomeId: 0 });
       }
     }
-    const genNumber = maxGenNumber + 1;
+
+    const genNumber = 1;
 
     // Create generation row
     const genRow = ctx.db.generation.insert({
