@@ -1,0 +1,10 @@
+export const MAX_SPEED = 70;          // m/s
+export const GRAVITY = 9.8;           // m/s²
+export const DT = 0.05;              // simulation timestep
+export const MAX_SIM_STEPS = 200;     // max trajectory points per ball
+export const MAX_TREE_DEPTH = 6;      // GP tree depth cap
+export const DEFAULT_POP_SIZE = 12;
+export const DEFAULT_MUTATION_RATE = 0.3;
+export const DEFAULT_TOURNAMENT_SIZE = 3;
+export const FITNESS_UNEVAL = -1;     // sentinel: unevaluated fitness
+export const HOLE_RADIUS = 0.5;       // yards, win threshold
