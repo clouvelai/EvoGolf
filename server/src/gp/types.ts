@@ -36,7 +36,7 @@ export function isTerminalNode(node: TreeNode): node is TerminalNode {
   return 'terminal' in node;
 }
 
-export const FUNC_OPS: FuncOp[] = ['add', 'sub', 'mul', 'div_safe', 'sin', 'cos', 'if_gt'];
+export const FUNC_OPS: FuncOp[] = ['add', 'sub', 'mul', 'div_safe', 'sin', 'cos', 'if_gt', 'max', 'min'];
 export const TERMINAL_NAMES: TerminalName[] = ['launch_angle', 'power', 'spin_x', 'spin_z', 'wind_x', 'wind_z', 'const'];
 
 /** Number of children each function operator expects */

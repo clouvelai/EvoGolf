@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { useSpacetimeDB, useTable } from 'spacetimedb/react';
@@ -14,11 +14,15 @@ export default function App() {
 
   const [selectedGenomeId, setSelectedGenomeId] = useState<number | null>(null);
 
-  // Auto-create game on first connect
-  const conn = getConnection();
-  if (isActive && courses.length === 0 && conn) {
-    conn.reducers.createGame({});
-  }
+  // Auto-create game on first connect (exactly once)
+  const gameCreatedRef = useRef(false);
+  useEffect(() => {
+    const conn = getConnection();
+    if (isActive && courses.length === 0 && conn && !gameCreatedRef.current) {
+      gameCreatedRef.current = true;
+      conn.reducers.createGame({});
+    }
+  }, [isActive, courses.length, getConnection]);
 
   // Get the latest generation (highest genId)
   const currentGenId = useMemo(() => {

@@ -1,5 +1,11 @@
 import { type SwingParams, type Vec3 } from './types.js';
-import { MAX_SPEED, GRAVITY, DT, MAX_SIM_STEPS } from '../constants.js';
+import {
+  MAX_SPEED, GRAVITY, DT, MAX_SIM_STEPS,
+  SPIN_X_LATERAL_FACTOR, SPIN_Z_FORWARD_FACTOR,
+  WIND_FACTOR, DRAG, BOUNCE_VY_THRESHOLD,
+  BOUNCE_VY_DAMPING, BOUNCE_VXZ_DAMPING,
+  ROLL_FRICTION, ROLL_STOP_THRESHOLD, MAX_ROLL_STEPS,
+} from '../constants.js';
 
 /**
  * Simulate a golf ball given swing parameters, tee position, and wind.
@@ -20,16 +26,14 @@ export function simulateBall(
   // Initial speed
   const speed = params.power * MAX_SPEED;
 
-  // spin_x affects lateral deviation factor
-  const spinXFactor = 1.0 + params.spin_x * 0.3;
-
   // Initial velocity components
-  let vx = speed * Math.sin(angleRad) * spinXFactor * params.spin_x;
+  // spin_x controls lateral deviation: 0 = straight, ±1 = max side curve
+  let vx = speed * Math.sin(angleRad) * params.spin_x * SPIN_X_LATERAL_FACTOR;
   let vy = speed * Math.sin(angleRad);
   let vz = speed * Math.cos(angleRad);
 
   // spin_z affects forward/backward spin (topspin adds forward speed, backspin reduces)
-  vz *= (1.0 + params.spin_z * 0.2);
+  vz *= (1.0 + params.spin_z * SPIN_Z_FORWARD_FACTOR);
 
   // Position
   let x = teeX;
@@ -48,13 +52,13 @@ export function simulateBall(
     vy -= GRAVITY * DT;
 
     // Apply wind
-    vx += windX * DT * 0.3;
-    vz += windZ * DT * 0.3;
+    vx += windX * DT * WIND_FACTOR;
+    vz += windZ * DT * WIND_FACTOR;
 
     // Apply drag
-    vx *= 0.998;
-    vy *= 0.998;
-    vz *= 0.998;
+    vx *= DRAG;
+    vy *= DRAG;
+    vz *= DRAG;
 
     // Update position
     x += vx * DT;
@@ -66,11 +70,11 @@ export function simulateBall(
       y = 0;
 
       // First bounce — check if we have enough velocity to bounce
-      if (Math.abs(vy) > 1.0) {
+      if (Math.abs(vy) > BOUNCE_VY_THRESHOLD) {
         // Bounce with damping
-        vy = -vy * 0.3;
-        vx *= 0.7;
-        vz *= 0.7;
+        vy = -vy * BOUNCE_VY_DAMPING;
+        vx *= BOUNCE_VXZ_DAMPING;
+        vz *= BOUNCE_VXZ_DAMPING;
         points.push({ x, y, z });
       } else {
         // Too slow to bounce — start rolling
@@ -78,12 +82,12 @@ export function simulateBall(
         points.push({ x, y, z });
 
         // Roll for a few more steps with heavy friction
-        for (let rollStep = 0; rollStep < 10 && step + rollStep < MAX_SIM_STEPS; rollStep++) {
-          vx *= 0.85;
-          vz *= 0.85;
+        for (let rollStep = 0; rollStep < MAX_ROLL_STEPS && step + rollStep < MAX_SIM_STEPS; rollStep++) {
+          vx *= ROLL_FRICTION;
+          vz *= ROLL_FRICTION;
 
           // Stop if barely moving
-          if (Math.abs(vx) < 0.01 && Math.abs(vz) < 0.01) break;
+          if (Math.abs(vx) < ROLL_STOP_THRESHOLD && Math.abs(vz) < ROLL_STOP_THRESHOLD) break;
 
           x += vx * DT;
           z += vz * DT;

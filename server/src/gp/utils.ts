@@ -60,7 +60,12 @@ export function serializeTree(node: TreeNode): string {
 
 /**
  * Parse a JSON string into a TreeNode.
+ * Returns a default terminal on malformed input rather than crashing the reducer.
  */
 export function parseTree(json: string): TreeNode {
-  return JSON.parse(json) as TreeNode;
+  try {
+    return JSON.parse(json) as TreeNode;
+  } catch {
+    return { terminal: 'const', value: 0 } as TreeNode;
+  }
 }

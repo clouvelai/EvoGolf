@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 import { Line } from '@react-three/drei';
-import { useTable } from 'spacetimedb/react';
-import { tables } from '../module_bindings';
 import { colorForOrigin } from '../lib/colors';
+import { useGenerationData } from '../hooks/useGenerationData';
 
 type TrajectoryLinesProps = {
   selectedGenomeId: number | null;
@@ -13,47 +12,7 @@ export default function TrajectoryLines({
   selectedGenomeId,
   currentGenId,
 }: TrajectoryLinesProps) {
-  const [balls] = useTable(tables.golfBall);
-  const [genomes] = useTable(tables.genome);
-  const [trajectoryPoints] = useTable(tables.trajectoryPoint);
-
-  // Filter balls for current generation
-  const currentBalls = useMemo(
-    () =>
-      currentGenId != null
-        ? balls.filter((b) => b.genId === currentGenId)
-        : [],
-    [balls, currentGenId],
-  );
-
-  // Build genome lookup by genomeId
-  const genomeMap = useMemo(() => {
-    const map = new Map<number, (typeof genomes)[number]>();
-    for (const g of genomes) {
-      map.set(g.genomeId, g);
-    }
-    return map;
-  }, [genomes]);
-
-  // Build trajectory lookup: ballId -> sorted points
-  const trajectoryMap = useMemo(() => {
-    const map = new Map<
-      number,
-      { step: number; x: number; y: number; z: number }[]
-    >();
-    for (const p of trajectoryPoints) {
-      let arr = map.get(p.ballId);
-      if (!arr) {
-        arr = [];
-        map.set(p.ballId, arr);
-      }
-      arr.push(p);
-    }
-    for (const arr of map.values()) {
-      arr.sort((a, b) => a.step - b.step);
-    }
-    return map;
-  }, [trajectoryPoints]);
+  const { currentBalls, genomeMap, trajectoryMap } = useGenerationData(currentGenId);
 
   // Build line data for each ball
   const lines = useMemo(() => {

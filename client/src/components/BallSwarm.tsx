@@ -1,9 +1,8 @@
 import { useRef, useMemo, useCallback } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
-import { useTable } from 'spacetimedb/react';
 import * as THREE from 'three';
-import { tables } from '../module_bindings';
 import { colorForOrigin } from '../lib/colors';
+import { useGenerationData } from '../hooks/useGenerationData';
 
 const MAX_BALLS = 64;
 const BALL_RADIUS = 0.4;
@@ -21,9 +20,7 @@ export default function BallSwarm({
   onSelectGenome,
   currentGenId,
 }: BallSwarmProps) {
-  const [balls] = useTable(tables.golfBall);
-  const [genomes] = useTable(tables.genome);
-  const [trajectoryPoints] = useTable(tables.trajectoryPoint);
+  const { currentBalls, genomeMap, trajectoryMap } = useGenerationData(currentGenId);
 
   const meshRef = useRef<THREE.InstancedMesh>(null!);
   const tempMatrix = useMemo(() => new THREE.Matrix4(), []);
@@ -33,45 +30,6 @@ export default function BallSwarm({
   // Animation time tracking per ball (by ballId)
   const animTimeRef = useRef<Map<number, number>>(new Map());
   const prevPointCountRef = useRef<Map<number, number>>(new Map());
-
-  // Filter balls for current generation
-  const currentBalls = useMemo(
-    () =>
-      currentGenId != null
-        ? balls.filter((b) => b.genId === currentGenId)
-        : [],
-    [balls, currentGenId],
-  );
-
-  // Build genome lookup by genomeId
-  const genomeMap = useMemo(() => {
-    const map = new Map<number, (typeof genomes)[number]>();
-    for (const g of genomes) {
-      map.set(g.genomeId, g);
-    }
-    return map;
-  }, [genomes]);
-
-  // Build trajectory lookup: ballId -> sorted points
-  const trajectoryMap = useMemo(() => {
-    const map = new Map<
-      number,
-      { step: number; x: number; y: number; z: number }[]
-    >();
-    for (const p of trajectoryPoints) {
-      let arr = map.get(p.ballId);
-      if (!arr) {
-        arr = [];
-        map.set(p.ballId, arr);
-      }
-      arr.push(p);
-    }
-    // Sort each array by step
-    for (const arr of map.values()) {
-      arr.sort((a, b) => a.step - b.step);
-    }
-    return map;
-  }, [trajectoryPoints]);
 
   // Build ballId -> index mapping for raycasting
   const ballIndexMap = useMemo(() => {
