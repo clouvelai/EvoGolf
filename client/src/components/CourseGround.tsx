@@ -8,6 +8,7 @@ type GolfCourse = {
   teeX: number; teeZ: number;
   holeX: number; holeZ: number;
   distance: number; windX: number; windZ: number;
+  courseVersion: number;
 } | null;
 
 /**
@@ -326,7 +327,7 @@ export default function CourseGround({ course }: { course: GolfCourse }) {
           outlineColor="#000000"
           font={undefined}
         >
-          137 YDS
+          {Math.round(course?.distance ?? 137)} YDS
         </Text>
       </Billboard>
 
@@ -339,7 +340,7 @@ export default function CourseGround({ course }: { course: GolfCourse }) {
           outlineWidth={0.08}
           outlineColor="#000000"
         >
-          #17
+          #{course?.courseVersion ?? 1}
         </Text>
       </Billboard>
 

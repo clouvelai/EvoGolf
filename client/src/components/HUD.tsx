@@ -5,9 +5,14 @@ type HUDProps = {
   windZ: number;
   genNumber: number | null;
   bestDistance: number | null;
+  courseVersion: number;
+  playerCount: number;
 };
 
-export default function HUD({ par, distance, windX, windZ, genNumber, bestDistance }: HUDProps) {
+export default function HUD({
+  par, distance, windX, windZ, genNumber, bestDistance,
+  courseVersion, playerCount,
+}: HUDProps) {
   const isClose = bestDistance != null && bestDistance < 5;
   return (
     <div
@@ -26,9 +31,9 @@ export default function HUD({ par, distance, windX, windZ, genNumber, bestDistan
         fontSize: 13,
       }}
     >
-      <span style={{ color: '#ffd700', fontWeight: 700 }}>#17</span>
+      <span style={{ color: '#ffd700', fontWeight: 700 }}>Hole #{courseVersion}</span>
       <span>PAR {par}</span>
-      <span>{distance} YDS</span>
+      <span>{Math.round(distance)} YDS</span>
       <span style={{ opacity: 0.7 }}>Wind {windX.toFixed(1)},{windZ.toFixed(1)}</span>
       {genNumber != null && <span>Gen {genNumber}</span>}
       {bestDistance != null && (
@@ -36,6 +41,9 @@ export default function HUD({ par, distance, windX, windZ, genNumber, bestDistan
           Best: {bestDistance.toFixed(1)} yds
         </span>
       )}
+      <span style={{ opacity: 0.5, fontSize: 11 }}>
+        {playerCount} player{playerCount !== 1 ? 's' : ''}
+      </span>
     </div>
   );
 }

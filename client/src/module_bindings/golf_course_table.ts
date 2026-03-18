@@ -20,4 +20,5 @@ export default __t.row({
   distance: __t.f64(),
   windX: __t.f64().name("wind_x"),
   windZ: __t.f64().name("wind_z"),
+  courseVersion: __t.u32().name("course_version"),
 });

@@ -18,4 +18,5 @@ export default __t.row({
   finalX: __t.f64().name("final_x"),
   finalZ: __t.f64().name("final_z"),
   distanceToHole: __t.f64().name("distance_to_hole"),
+  playerId: __t.identity().name("player_id"),
 });

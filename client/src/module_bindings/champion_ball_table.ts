@@ -11,10 +11,9 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  sessionId: __t.u32().primaryKey().name("session_id"),
-  holeId: __t.u32().name("hole_id"),
-  totalGenerations: __t.u32().name("total_generations"),
-  bestFitness: __t.f64().name("best_fitness"),
-  achievedHoleInOne: __t.bool().name("achieved_hole_in_one"),
-  popSize: __t.u32().name("pop_size"),
+  championId: __t.u32().primaryKey().name("champion_id"),
+  playerId: __t.identity().name("player_id"),
+  treeJson: __t.string().name("tree_json"),
+  courseVersion: __t.u32().name("course_version"),
+  generationsToSolve: __t.u32().name("generations_to_solve"),
 });

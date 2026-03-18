@@ -9,11 +9,13 @@ type GPControlPanelProps = {
   autoEvolving: boolean;
   speedMultiplier: number;
   hofCount: number;
+  followMode: boolean;
   onInitialize: () => void;
   onNextGen: () => void;
   onToggleAutoEvolve: () => void;
   onSpeedChange: (speed: number) => void;
   onOpenHof: () => void;
+  onToggleFollow: () => void;
 };
 
 export default function GPControlPanel({
@@ -25,11 +27,13 @@ export default function GPControlPanel({
   autoEvolving,
   speedMultiplier,
   hofCount,
+  followMode,
   onInitialize,
   onNextGen,
   onToggleAutoEvolve,
   onSpeedChange,
   onOpenHof,
+  onToggleFollow,
 }: GPControlPanelProps) {
   const canNextGen = phase === 'evaluated' && !autoEvolving;
 
@@ -46,7 +50,7 @@ export default function GPControlPanel({
         flexDirection: 'column',
         gap: 8,
         padding: '10px 16px',
-        minWidth: 360,
+        minWidth: 420,
       }}
     >
       {/* Phase indicator */}
@@ -69,7 +73,7 @@ export default function GPControlPanel({
       )}
 
       {/* Action buttons row */}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
         <button
           className="ui-btn ui-btn--green"
           onClick={onInitialize}
@@ -92,11 +96,20 @@ export default function GPControlPanel({
           {autoEvolving ? 'Stop' : 'Auto-Evolve'}
         </button>
         <button
+          className={`ui-btn ${followMode ? 'ui-btn--active' : ''}`}
+          onClick={onToggleFollow}
+          disabled={!hasPopulation}
+          style={{ borderColor: followMode ? 'rgba(102, 204, 255, 0.6)' : undefined }}
+          title="Camera follows best ball"
+        >
+          {followMode ? 'Free Cam' : 'Follow'}
+        </button>
+        <button
           className="ui-btn ui-btn--gold"
           onClick={onOpenHof}
           disabled={hofCount === 0}
         >
-          Hall of Fame ({hofCount})
+          HoF ({hofCount})
         </button>
       </div>
 
@@ -114,7 +127,7 @@ export default function GPControlPanel({
           </span>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ opacity: 0.5, fontSize: 10 }}>{speedMultiplier.toFixed(1)}×</span>
+          <span style={{ opacity: 0.5, fontSize: 10 }}>{speedMultiplier.toFixed(1)}x</span>
           <input
             type="range"
             min={0.5}

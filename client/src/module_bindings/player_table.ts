@@ -13,5 +13,6 @@ import {
 export default __t.row({
   identity: __t.identity(),
   name: __t.string(),
-  wildcardGenomeId: __t.u32().name("wildcard_genome_id"),
+  color: __t.string(),
+  carryOverJson: __t.string().name("carry_over_json"),
 });

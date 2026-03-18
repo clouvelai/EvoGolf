@@ -2,13 +2,22 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection, tables } from './module_bindings';
+import type { Identity } from 'spacetimedb';
 import App from './App';
 import './styles/ui.css';
+
+// Store identity globally so App can access it
+export let localIdentity: Identity | null = null;
 
 const connectionBuilder = DbConnection.builder()
   .withUri('ws://localhost:3000')
   .withDatabaseName('evogolf')
-  .onConnect((conn, _identity, _token) => {
+  .onConnect((conn, identity, _token) => {
+    localIdentity = identity;
+
+    // Register player (idempotent)
+    conn.reducers.registerPlayer({ name: '' });
+
     conn.subscriptionBuilder()
       .onApplied(() => console.log('[SpacetimeDB] Subscription applied'))
       .subscribe([
@@ -19,7 +28,7 @@ const connectionBuilder = DbConnection.builder()
         tables.trajectoryPoint,
         tables.gpEvent,
         tables.player,
-        tables.gameSession,
+        tables.championBall,
         tables.hallOfFame,
       ]);
   })

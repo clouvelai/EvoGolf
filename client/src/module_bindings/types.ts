@@ -10,15 +10,14 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const GameSession = __t.object("GameSession", {
-  sessionId: __t.u32(),
-  holeId: __t.u32(),
-  totalGenerations: __t.u32(),
-  bestFitness: __t.f64(),
-  achievedHoleInOne: __t.bool(),
-  popSize: __t.u32(),
+export const ChampionBall = __t.object("ChampionBall", {
+  championId: __t.u32(),
+  playerId: __t.identity(),
+  treeJson: __t.string(),
+  courseVersion: __t.u32(),
+  generationsToSolve: __t.u32(),
 });
-export type GameSession = __Infer<typeof GameSession>;
+export type ChampionBall = __Infer<typeof ChampionBall>;
 
 export const Generation = __t.object("Generation", {
   genId: __t.u32(),
@@ -28,6 +27,7 @@ export const Generation = __t.object("Generation", {
   bestFitness: __t.f64(),
   avgFitness: __t.f64(),
   popSize: __t.u32(),
+  playerId: __t.identity(),
 });
 export type Generation = __Infer<typeof Generation>;
 
@@ -43,6 +43,7 @@ export const Genome = __t.object("Genome", {
   parentBId: __t.u32(),
   isElite: __t.bool(),
   isSelected: __t.bool(),
+  playerId: __t.identity(),
 });
 export type Genome = __Infer<typeof Genome>;
 
@@ -54,6 +55,7 @@ export const GolfBall = __t.object("GolfBall", {
   finalX: __t.f64(),
   finalZ: __t.f64(),
   distanceToHole: __t.f64(),
+  playerId: __t.identity(),
 });
 export type GolfBall = __Infer<typeof GolfBall>;
 
@@ -67,6 +69,7 @@ export const GolfCourse = __t.object("GolfCourse", {
   distance: __t.f64(),
   windX: __t.f64(),
   windZ: __t.f64(),
+  courseVersion: __t.u32(),
 });
 export type GolfCourse = __Infer<typeof GolfCourse>;
 
@@ -76,32 +79,30 @@ export const GpEvent = __t.object("GpEvent", {
   eventType: __t.string(),
   description: __t.string(),
   genomeIdsJson: __t.string(),
+  playerId: __t.identity(),
 });
 export type GpEvent = __Infer<typeof GpEvent>;
 
 export const HallOfFame = __t.object("HallOfFame", {
   hofId: __t.u32(),
-  sessionId: __t.u32(),
-  genomeTreeJson: __t.string(),
-  fitness: __t.f64(),
-  distanceToHole: __t.f64(),
+  playerId: __t.identity(),
+  playerName: __t.string(),
+  courseVersion: __t.u32(),
   generationsToSolve: __t.u32(),
-  origin: __t.string(),
-  isHoleInOne: __t.bool(),
   teeX: __t.f64(),
   teeZ: __t.f64(),
   holeX: __t.f64(),
   holeZ: __t.f64(),
   windX: __t.f64(),
   windZ: __t.f64(),
-  trajectoryJson: __t.string(),
 });
 export type HallOfFame = __Infer<typeof HallOfFame>;
 
 export const Player = __t.object("Player", {
   identity: __t.identity(),
   name: __t.string(),
-  wildcardGenomeId: __t.u32(),
+  color: __t.string(),
+  carryOverJson: __t.string(),
 });
 export type Player = __Infer<typeof Player>;
 

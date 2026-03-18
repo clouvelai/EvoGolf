@@ -18,4 +18,5 @@ export default __t.row({
   bestFitness: __t.f64().name("best_fitness"),
   avgFitness: __t.f64().name("avg_fitness"),
   popSize: __t.u32().name("pop_size"),
+  playerId: __t.identity().name("player_id"),
 });

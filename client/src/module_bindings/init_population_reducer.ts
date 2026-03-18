@@ -13,4 +13,6 @@ import {
 export default {
   holeId: __t.u32(),
   popSize: __t.u32(),
+  strategy: __t.string(),
+  championId: __t.u32(),
 };

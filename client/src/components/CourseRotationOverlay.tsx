@@ -1,15 +1,20 @@
-type WinOverlayProps = {
-  genNumber: number;
-  onPlayAgain: () => void;
+type CourseRotationOverlayProps = {
+  winnerName: string;
+  courseVersion: number;
+  onContinue: () => void;
 };
 
-export default function WinOverlay({ genNumber, onPlayAgain }: WinOverlayProps) {
+export default function CourseRotationOverlay({
+  winnerName,
+  courseVersion,
+  onContinue,
+}: CourseRotationOverlayProps) {
   return (
     <div
       style={{
         position: 'absolute',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.6)',
+        background: 'rgba(0, 0, 0, 0.7)',
         zIndex: 100,
       }}
     >
@@ -22,7 +27,7 @@ export default function WinOverlay({ genNumber, onPlayAgain }: WinOverlayProps) 
           transform: 'translate(-50%, -50%)',
           textAlign: 'center',
           padding: '32px 48px',
-          minWidth: 300,
+          minWidth: 340,
         }}
       >
         <div
@@ -36,15 +41,18 @@ export default function WinOverlay({ genNumber, onPlayAgain }: WinOverlayProps) 
         >
           HOLE IN ONE!
         </div>
-        <div style={{ fontSize: 14, opacity: 0.7, marginBottom: 24 }}>
-          Evolved in {genNumber} generation{genNumber !== 1 ? 's' : ''}
+        <div style={{ fontSize: 16, marginBottom: 4, color: '#e0e8f0' }}>
+          <span style={{ color: '#66ccff', fontWeight: 700 }}>{winnerName}</span> conquered Hole #{courseVersion}
+        </div>
+        <div style={{ fontSize: 13, opacity: 0.5, marginBottom: 24 }}>
+          New course incoming...
         </div>
         <button
           className="ui-btn ui-btn--gold"
-          style={{ fontSize: 14, padding: '8px 24px' }}
-          onClick={onPlayAgain}
+          style={{ fontSize: 14, padding: '10px 28px' }}
+          onClick={onContinue}
         >
-          Play Again
+          Choose Strategy
         </button>
       </div>
     </div>

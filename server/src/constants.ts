@@ -19,7 +19,9 @@ export const MAX_ROLL_STEPS = 10;           // max roll simulation steps
 // GP
 export const MAX_TREE_DEPTH = 6;
 export const DEFAULT_POP_SIZE = 12;
-export const DEFAULT_MUTATION_RATE = 0.3;
-export const DEFAULT_TOURNAMENT_SIZE = 3;
+export const DEFAULT_MUTATION_RATE = 0.5;
+export const DEFAULT_TOURNAMENT_SIZE = 4;
+export const STAGNATION_GENS = 10;          // gens without improvement to trigger shake-up
+export const STAGNATION_MUTATION_RATE = 0.8; // boosted mutation rate during stagnation
 export const FITNESS_UNEVAL = -1;           // sentinel: unevaluated fitness
 export const HOLE_RADIUS = 0.5;             // yards, win threshold

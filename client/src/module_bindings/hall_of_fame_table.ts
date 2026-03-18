@@ -12,18 +12,14 @@ import {
 
 export default __t.row({
   hofId: __t.u32().primaryKey().name("hof_id"),
-  sessionId: __t.u32().name("session_id"),
-  genomeTreeJson: __t.string().name("genome_tree_json"),
-  fitness: __t.f64(),
-  distanceToHole: __t.f64().name("distance_to_hole"),
+  playerId: __t.identity().name("player_id"),
+  playerName: __t.string().name("player_name"),
+  courseVersion: __t.u32().name("course_version"),
   generationsToSolve: __t.u32().name("generations_to_solve"),
-  origin: __t.string(),
-  isHoleInOne: __t.bool().name("is_hole_in_one"),
   teeX: __t.f64().name("tee_x"),
   teeZ: __t.f64().name("tee_z"),
   holeX: __t.f64().name("hole_x"),
   holeZ: __t.f64().name("hole_z"),
   windX: __t.f64().name("wind_x"),
   windZ: __t.f64().name("wind_z"),
-  trajectoryJson: __t.string().name("trajectory_json"),
 });

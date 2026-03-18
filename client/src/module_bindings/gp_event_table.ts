@@ -16,4 +16,5 @@ export default __t.row({
   eventType: __t.string().name("event_type"),
   description: __t.string(),
   genomeIdsJson: __t.string().name("genome_ids_json"),
+  playerId: __t.identity().name("player_id"),
 });

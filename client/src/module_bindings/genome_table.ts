@@ -22,4 +22,5 @@ export default __t.row({
   parentBId: __t.u32().name("parent_b_id"),
   isElite: __t.bool().name("is_elite"),
   isSelected: __t.bool().name("is_selected"),
+  playerId: __t.identity().name("player_id"),
 });

@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
 import { useSpacetimeDB, useTable } from 'spacetimedb/react';
 import { tables } from './module_bindings';
+import { localIdentity } from './main';
 import CourseGround from './components/CourseGround';
 import BallSwarm from './components/BallSwarm';
 import TrajectoryLines from './components/TrajectoryLines';
@@ -11,13 +11,18 @@ import FitnessChart from './components/FitnessChart';
 import EventLog from './components/EventLog';
 import GenomeTreePanel from './components/GenomeTreePanel';
 import GPControlPanel from './components/GPControlPanel';
-import WinOverlay from './components/WinOverlay';
+import CourseRotationOverlay from './components/CourseRotationOverlay';
+import StrategyPicker from './components/StrategyPicker';
+import PlayerList from './components/PlayerList';
 import HallOfFame from './components/HallOfFame';
-import HofBallReplay from './components/HofBallReplay';
-import HofTrajectoryLine from './components/HofTrajectoryLine';
+import CameraController from './components/CameraController';
+import WinCelebration from './components/WinCelebration';
+import RotationAnimation from './components/RotationAnimation';
+import Minimap from './components/Minimap';
 
-const HOLE_RADIUS = 0.5;
 const MAX_AUTO_GENS = 1000;
+
+type GamePhase = 'playing' | 'rotating' | 'picking';
 
 export default function App() {
   const { isActive, getConnection } = useSpacetimeDB();
@@ -27,15 +32,24 @@ export default function App() {
   const [balls] = useTable(tables.golfBall);
   const [gpEvents] = useTable(tables.gpEvent);
   const [hofEntries] = useTable(tables.hallOfFame);
+  const [players] = useTable(tables.player);
+  const [championBalls] = useTable(tables.championBall);
 
   const [selectedGenomeId, setSelectedGenomeId] = useState<number | null>(null);
   const [autoEvolving, setAutoEvolving] = useState(false);
   const [speedMultiplier, setSpeedMultiplier] = useState(1);
-  const [winDismissed, setWinDismissed] = useState(false);
+  const [gamePhase, setGamePhase] = useState<GamePhase>('playing');
   const [hofMode, setHofMode] = useState(false);
-  const [selectedHofId, setSelectedHofId] = useState<number | null>(null);
+  const [followMode, setFollowMode] = useState(false);
+  const [celebrating, setCelebrating] = useState(false);
 
-  // Auto-create game on first connect (exactly once)
+  // Track course version to detect rotation
+  const courseVersionRef = useRef<number | null>(null);
+  const [winnerName, setWinnerName] = useState<string>('');
+  const [winnerCourseVersion, setWinnerCourseVersion] = useState<number>(0);
+  const [winnerColor, setWinnerColor] = useState<string>('#ffd700');
+
+  // Auto-create game on first connect
   const gameCreatedRef = useRef(false);
   useEffect(() => {
     const conn = getConnection();
@@ -47,30 +61,82 @@ export default function App() {
 
   const course = courses[0] ?? null;
 
-  // Current generation (highest genNumber — genId autoInc can wrap after republish)
+  // Identity helpers
+  const myIdentity = localIdentity;
+  const isMyIdentity = useCallback((id: any): boolean => {
+    if (!myIdentity) return false;
+    if (myIdentity.isEqual) return myIdentity.isEqual(id);
+    return myIdentity === id;
+  }, [myIdentity]);
+
+  // Player color map (needed before course rotation effect)
+  const playerColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of players) {
+      map.set(p.identity.toHexString(), p.color);
+    }
+    return map;
+  }, [players]);
+
+  // Detect course rotation
+  useEffect(() => {
+    if (!course) return;
+    const prevVersion = courseVersionRef.current;
+    if (prevVersion !== null && course.courseVersion !== prevVersion) {
+      const latestHof = hofEntries.length > 0
+        ? hofEntries.reduce((a, b) => a.hofId > b.hofId ? a : b)
+        : null;
+      setWinnerName(latestHof?.playerName ?? 'Someone');
+      setWinnerCourseVersion(prevVersion);
+      setAutoEvolving(false);
+
+      // Find winner's color
+      if (latestHof) {
+        const winPid = latestHof.playerId.toHexString();
+        const wColor = playerColorMap.get(winPid);
+        setWinnerColor(wColor ?? '#ffd700');
+      }
+
+      // Trigger celebration first, then rotation
+      setCelebrating(true);
+      setTimeout(() => {
+        setCelebrating(false);
+        setGamePhase('rotating');
+      }, 2500);
+    }
+    courseVersionRef.current = course.courseVersion;
+  }, [course?.courseVersion, hofEntries, playerColorMap]);
+
+  // My generations (filtered by identity)
+  const myGenerations = useMemo(() => {
+    if (!myIdentity) return [];
+    return generations.filter((g) => isMyIdentity(g.playerId));
+  }, [generations, myIdentity, isMyIdentity]);
+
+  // Current generation (my highest genNumber)
   const currentGen = useMemo(() => {
-    if (generations.length === 0) return null;
-    let latest = generations[0];
-    for (const gen of generations) {
+    if (myGenerations.length === 0) return null;
+    let latest = myGenerations[0];
+    for (const gen of myGenerations) {
       if (gen.genNumber > latest.genNumber) latest = gen;
     }
     return latest;
-  }, [generations]);
+  }, [myGenerations]);
 
   const currentGenId = currentGen?.genId ?? null;
 
-  // Sorted generations for fitness chart
+  // Sorted generations for fitness chart (mine only)
   const sortedGens = useMemo(() => {
-    return [...generations]
+    return [...myGenerations]
       .sort((a, b) => a.genNumber - b.genNumber)
       .map((g) => ({
         genNumber: g.genNumber,
         bestFitness: g.bestFitness,
         avgFitness: g.avgFitness,
       }));
-  }, [generations]);
+  }, [myGenerations]);
 
-  // Genomes in current generation
+  // Genomes in my current generation
   const currentGenGenomes = useMemo(() => {
     if (currentGenId == null) return [];
     return genomes.filter((g) => g.genId === currentGenId);
@@ -82,7 +148,7 @@ export default function App() {
     return genomes.find((g) => g.genomeId === selectedGenomeId) ?? null;
   }, [genomes, selectedGenomeId]);
 
-  // Best ball in current gen (min distanceToHole among stopped balls)
+  // Best ball in my current gen
   const bestBall = useMemo(() => {
     const currentBalls = balls.filter((b) => b.genId === currentGenId && b.state === 'stopped');
     if (currentBalls.length === 0) return null;
@@ -93,18 +159,74 @@ export default function App() {
     return best;
   }, [balls, currentGenId]);
 
-  // Win detection
-  const winningBall = useMemo(() => {
-    if (winDismissed) return null;
-    return balls.find((b) => b.distanceToHole < HOLE_RADIUS && b.state === 'stopped') ?? null;
-  }, [balls, winDismissed]);
-
-  // Sorted events
+  // Sorted events (my events only)
   const sortedEvents = useMemo(() => {
-    return [...gpEvents].sort((a, b) => a.eventId - b.eventId);
-  }, [gpEvents]);
+    if (!myIdentity) return [];
+    return [...gpEvents]
+      .filter((e) => isMyIdentity(e.playerId))
+      .sort((a, b) => a.eventId - b.eventId);
+  }, [gpEvents, myIdentity, isMyIdentity]);
 
-  // ── Auto-evolve logic ──
+  // Player name map
+  const playerNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of players) {
+      map.set(p.identity.toHexString(), p.name);
+    }
+    return map;
+  }, [players]);
+
+  // My player row
+  const myPlayer = useMemo(() => {
+    if (!myIdentity) return null;
+    return players.find((p) => isMyIdentity(p.identity)) ?? null;
+  }, [players, myIdentity, isMyIdentity]);
+
+  // My champion balls
+  const myChampionBalls = useMemo(() => {
+    if (!myIdentity) return [];
+    return championBalls.filter((c) => isMyIdentity(c.playerId));
+  }, [championBalls, myIdentity, isMyIdentity]);
+
+  // All active balls (for multiplayer rendering)
+  const allActiveBalls = useMemo(() => {
+    const latestGenByPlayer = new Map<string, number>();
+    const latestGenNumberByPlayer = new Map<string, number>();
+    for (const gen of generations) {
+      const pid = gen.playerId.toHexString();
+      const existing = latestGenNumberByPlayer.get(pid) ?? -1;
+      if (gen.genNumber > existing) {
+        latestGenByPlayer.set(pid, gen.genId);
+        latestGenNumberByPlayer.set(pid, gen.genNumber);
+      }
+    }
+    const activeGenIds = new Set(latestGenByPlayer.values());
+    return balls.filter((b) => activeGenIds.has(b.genId));
+  }, [generations, balls]);
+
+  // Best ball position for camera follow
+  const bestBallPosition = useMemo((): [number, number, number] | null => {
+    if (!bestBall) return null;
+    return [bestBall.finalX, 2, bestBall.finalZ];
+  }, [bestBall]);
+
+  // Course center for camera
+  const courseCenter = useMemo((): [number, number, number] => {
+    if (!course) return [0, 2, 55];
+    return [
+      (course.teeX + course.holeX) / 2,
+      2,
+      (course.teeZ + course.holeZ) / 2,
+    ];
+  }, [course]);
+
+  // Hole position for effects
+  const holePosition = useMemo((): [number, number, number] => {
+    if (!course) return [0, 0.5, 137];
+    return [course.holeX, 0.5, course.holeZ];
+  }, [course]);
+
+  // Auto-evolve logic
   useEffect(() => {
     if (!autoEvolving || !currentGen) return;
     if (currentGen.phase !== 'evaluated') return;
@@ -112,7 +234,7 @@ export default function App() {
       setAutoEvolving(false);
       return;
     }
-    if (winningBall) {
+    if (gamePhase !== 'playing') {
       setAutoEvolving(false);
       return;
     }
@@ -125,18 +247,23 @@ export default function App() {
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [autoEvolving, currentGen, winningBall, getConnection]);
+  }, [autoEvolving, currentGen, gamePhase, getConnection]);
 
-  // ── Handlers ──
+  // Handlers
   const handleSelectGenome = useCallback((genomeId: number | null) => {
     setSelectedGenomeId(genomeId);
   }, []);
 
-  const handleInitialize = useCallback(() => {
+  const handleInitialize = useCallback((strategy: string = 'fresh', championId: number = 0) => {
     const conn = getConnection();
     if (!conn || !course) return;
-    conn.reducers.initPopulation({ holeId: course.holeId, popSize: 12 });
-    setWinDismissed(false);
+    conn.reducers.initPopulation({
+      holeId: course.holeId,
+      popSize: 12,
+      strategy,
+      championId,
+    });
+    setGamePhase('playing');
   }, [getConnection, course]);
 
   const handleNextGen = useCallback(() => {
@@ -155,14 +282,13 @@ export default function App() {
     setAutoEvolving((prev) => !prev);
   }, []);
 
-  const handlePlayAgain = useCallback(() => {
-    setWinDismissed(true);
-    setAutoEvolving(false);
-    setSelectedGenomeId(null);
-    const conn = getConnection();
-    if (!conn || !course) return;
-    conn.reducers.initPopulation({ holeId: course.holeId, popSize: 12 });
-  }, [getConnection, course]);
+  const handleRotationDismiss = useCallback(() => {
+    setGamePhase('picking');
+  }, []);
+
+  const handleStrategyPick = useCallback((strategy: string, championId?: number) => {
+    handleInitialize(strategy, championId ?? 0);
+  }, [handleInitialize]);
 
   const handleOpenHof = useCallback(() => {
     setHofMode(true);
@@ -171,13 +297,11 @@ export default function App() {
 
   const handleCloseHof = useCallback(() => {
     setHofMode(false);
-    setSelectedHofId(null);
   }, []);
 
-  const selectedHofEntry = useMemo(() => {
-    if (selectedHofId == null) return null;
-    return hofEntries.find((e) => e.hofId === selectedHofId) ?? null;
-  }, [hofEntries, selectedHofId]);
+  const handleToggleFollow = useCallback(() => {
+    setFollowMode((prev) => !prev);
+  }, []);
 
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#081828', position: 'relative' }}>
@@ -191,7 +315,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ── HUD ── */}
+      {/* HUD */}
       {course && (
         <HUD
           par={course.par}
@@ -200,26 +324,48 @@ export default function App() {
           windZ={course.windZ}
           genNumber={currentGen?.genNumber ?? null}
           bestDistance={bestBall?.distanceToHole ?? null}
+          courseVersion={course.courseVersion}
+          playerCount={players.length}
         />
       )}
 
-      {/* ── Evolution UI (hidden in HoF mode) ── */}
-      {!hofMode && (
+      {/* Player List */}
+      <PlayerList
+        players={players}
+        generations={generations}
+        myIdentity={myIdentity}
+        isMyIdentity={isMyIdentity}
+      />
+
+      {/* Minimap */}
+      {!hofMode && gamePhase === 'playing' && (
+        <Minimap
+          course={course}
+          allBalls={allActiveBalls}
+          myIdentity={myIdentity}
+          playerColorMap={playerColorMap}
+        />
+      )}
+
+      {/* Evolution UI (hidden in HoF mode or during rotation) */}
+      {!hofMode && gamePhase === 'playing' && (
         <>
           <GPControlPanel
             phase={currentGen?.phase ?? null}
             genNumber={currentGen?.genNumber ?? null}
             bestFitness={currentGen?.bestFitness ?? null}
             avgFitness={currentGen?.avgFitness ?? null}
-            hasPopulation={generations.length > 0}
+            hasPopulation={myGenerations.length > 0}
             autoEvolving={autoEvolving}
             speedMultiplier={speedMultiplier}
             hofCount={hofEntries.length}
-            onInitialize={handleInitialize}
+            followMode={followMode}
+            onInitialize={() => handleInitialize('fresh')}
             onNextGen={handleNextGen}
             onToggleAutoEvolve={handleToggleAutoEvolve}
             onSpeedChange={setSpeedMultiplier}
             onOpenHof={handleOpenHof}
+            onToggleFollow={handleToggleFollow}
           />
           <FitnessChart generations={sortedGens} />
           <EventLog events={sortedEvents} />
@@ -231,26 +377,36 @@ export default function App() {
             onSponsor={handleSponsor}
             sponsorDisabled={selectedGenomeId == null}
           />
-          {winningBall && currentGen && (
-            <WinOverlay
-              genNumber={currentGen.genNumber}
-              onPlayAgain={handlePlayAgain}
-            />
-          )}
         </>
       )}
 
-      {/* ── Hall of Fame UI ── */}
+      {/* Course Rotation Overlay */}
+      {gamePhase === 'rotating' && (
+        <CourseRotationOverlay
+          winnerName={winnerName}
+          courseVersion={winnerCourseVersion}
+          onContinue={handleRotationDismiss}
+        />
+      )}
+
+      {/* Strategy Picker */}
+      {gamePhase === 'picking' && (
+        <StrategyPicker
+          hasCarryOver={!!myPlayer?.carryOverJson}
+          championBalls={myChampionBalls}
+          onPick={handleStrategyPick}
+        />
+      )}
+
+      {/* Hall of Fame UI */}
       {hofMode && (
         <HallOfFame
           entries={hofEntries}
-          selectedHofId={selectedHofId}
-          onSelectEntry={setSelectedHofId}
           onBack={handleCloseHof}
         />
       )}
 
-      {/* ── 3D Canvas ── */}
+      {/* 3D Canvas */}
       <Canvas
         camera={{ position: [-45, 50, -30], fov: 45, near: 0.1, far: 500 }}
         gl={{ antialias: true }}
@@ -266,38 +422,43 @@ export default function App() {
         <directionalLight position={[-40, 40, -20]} intensity={0.3} color="#6bb8e0" />
         <pointLight position={[0, -5, 70]} intensity={0.5} color="#2a6090" distance={150} />
 
-        <CourseGround course={course} />
+        {/* Course with rotation animation wrapper */}
+        <RotationAnimation isRotating={gamePhase === 'rotating'}>
+          <CourseGround course={course} />
+        </RotationAnimation>
+
+        {/* Win celebration particles */}
+        <WinCelebration
+          active={celebrating}
+          holePosition={holePosition}
+          winnerColor={winnerColor}
+        />
+
         {!hofMode && (
           <>
             <BallSwarm
               selectedGenomeId={selectedGenomeId}
               onSelectGenome={handleSelectGenome}
-              currentGenId={currentGenId}
+              allBalls={allActiveBalls}
+              myIdentity={myIdentity}
+              playerColorMap={playerColorMap}
+              playerNameMap={playerNameMap}
               speedMultiplier={speedMultiplier}
             />
             <TrajectoryLines
               selectedGenomeId={selectedGenomeId}
-              currentGenId={currentGenId}
+              allBalls={allActiveBalls}
+              myIdentity={myIdentity}
+              playerColorMap={playerColorMap}
             />
           </>
         )}
-        {hofMode && selectedHofEntry && (
-          <>
-            <HofBallReplay
-              trajectoryJson={selectedHofEntry.trajectoryJson}
-              isHoleInOne={selectedHofEntry.isHoleInOne}
-            />
-            <HofTrajectoryLine
-              trajectoryJson={selectedHofEntry.trajectoryJson}
-              isHoleInOne={selectedHofEntry.isHoleInOne}
-            />
-          </>
-        )}
-        <OrbitControls
-          target={[0, 2, 55]}
-          maxPolarAngle={Math.PI / 2.1}
-          minDistance={20}
-          maxDistance={200}
+
+        <CameraController
+          followMode={followMode}
+          bestBallPosition={bestBallPosition}
+          courseCenter={courseCenter}
+          isRotating={gamePhase === 'rotating'}
         />
       </Canvas>
     </div>

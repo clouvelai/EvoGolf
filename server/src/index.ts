@@ -7,7 +7,19 @@ import { treeDepth, nodeCount, serializeTree, parseTree, clampTree } from './gp/
 import { tournamentSelection } from './gp/selection.js';
 import { subtreeCrossover } from './gp/crossover.js';
 import { mutateTree } from './gp/mutation.js';
-import { FITNESS_UNEVAL, DEFAULT_TOURNAMENT_SIZE, DEFAULT_MUTATION_RATE, HOLE_RADIUS } from './constants.js';
+import { FITNESS_UNEVAL, DEFAULT_TOURNAMENT_SIZE, DEFAULT_MUTATION_RATE, HOLE_RADIUS, STAGNATION_GENS, STAGNATION_MUTATION_RATE } from './constants.js';
+
+// --- Player color palette ---
+const PLAYER_COLORS = [
+  '#66ccff', // sky blue
+  '#ff55aa', // hot pink
+  '#44ffaa', // bright green
+  '#ffa500', // orange
+  '#aa55ff', // purple
+  '#ff4444', // red
+  '#00dddd', // cyan
+  '#ffdd44', // yellow
+];
 
 // --- Tables ---
 
@@ -23,11 +35,16 @@ const golfCourse = table(
     distance: t.f64(),
     windX: t.f64(),
     windZ: t.f64(),
+    courseVersion: t.u32(),
   }
 );
 
 const generation = table(
-  { name: 'generation', public: true },
+  {
+    name: 'generation',
+    public: true,
+    indexes: [{ accessor: 'byPlayerId', algorithm: 'btree', columns: ['playerId'] }],
+  },
   {
     genId: t.u32().primaryKey().autoInc(),
     holeId: t.u32(),
@@ -36,6 +53,7 @@ const generation = table(
     bestFitness: t.f64(),
     avgFitness: t.f64(),
     popSize: t.u32(),
+    playerId: t.identity(),
   }
 );
 
@@ -57,6 +75,7 @@ const genome = table(
     parentBId: t.u32(),
     isElite: t.bool(),
     isSelected: t.bool(),
+    playerId: t.identity(),
   }
 );
 
@@ -74,6 +93,7 @@ const golfBall = table(
     finalX: t.f64(),
     finalZ: t.f64(),
     distanceToHole: t.f64(),
+    playerId: t.identity(),
   }
 );
 
@@ -94,13 +114,17 @@ const trajectoryPoint = table(
 );
 
 const gpEvent = table(
-  { name: 'gp_event', public: true },
+  {
+    name: 'gp_event',
+    public: true,
+  },
   {
     eventId: t.u32().primaryKey().autoInc(),
     genId: t.u32(),
     eventType: t.string(),
     description: t.string(),
     genomeIdsJson: t.string(),
+    playerId: t.identity(),
   }
 );
 
@@ -109,19 +133,23 @@ const player = table(
   {
     identity: t.identity().unique(),
     name: t.string(),
-    wildcardGenomeId: t.u32(),
+    color: t.string(),
+    carryOverJson: t.string(),
   }
 );
 
-const gameSession = table(
-  { name: 'game_session', public: true },
+const championBall = table(
   {
-    sessionId: t.u32().primaryKey().autoInc(),
-    holeId: t.u32(),
-    totalGenerations: t.u32(),
-    bestFitness: t.f64(),
-    achievedHoleInOne: t.bool(),
-    popSize: t.u32(),
+    name: 'champion_ball',
+    public: true,
+    indexes: [{ accessor: 'byPlayerId', algorithm: 'btree', columns: ['playerId'] }],
+  },
+  {
+    championId: t.u32().primaryKey().autoInc(),
+    playerId: t.identity(),
+    treeJson: t.string(),
+    courseVersion: t.u32(),
+    generationsToSolve: t.u32(),
   }
 );
 
@@ -129,20 +157,16 @@ const hallOfFame = table(
   { name: 'hall_of_fame', public: true },
   {
     hofId: t.u32().primaryKey().autoInc(),
-    sessionId: t.u32(),
-    genomeTreeJson: t.string(),
-    fitness: t.f64(),
-    distanceToHole: t.f64(),
+    playerId: t.identity(),
+    playerName: t.string(),
+    courseVersion: t.u32(),
     generationsToSolve: t.u32(),
-    origin: t.string(),
-    isHoleInOne: t.bool(),
     teeX: t.f64(),
     teeZ: t.f64(),
     holeX: t.f64(),
     holeZ: t.f64(),
     windX: t.f64(),
     windZ: t.f64(),
-    trajectoryJson: t.string(),
   }
 );
 
@@ -156,7 +180,7 @@ const spacetimedb = schema({
   trajectoryPoint,
   gpEvent,
   player,
-  gameSession,
+  championBall,
   hallOfFame,
 });
 export default spacetimedb;
@@ -171,12 +195,12 @@ type CourseInfo = {
 
 /**
  * Insert a genome row + its corresponding golf_ball row.
- * Returns the inserted genome row (with assigned genomeId).
  */
 function insertGenomeWithBall(
-  ctx: { db: { genome: { insert: Function }; golfBall: { insert: Function } } },
+  ctx: { db: any },
   genId: number,
   tree: import('./gp/types.js').TreeNode,
+  playerId: any,
   opts: { origin: string; parentAId: number; parentBId: number; isElite: boolean },
 ) {
   const genomeRow = ctx.db.genome.insert({
@@ -191,6 +215,7 @@ function insertGenomeWithBall(
     parentBId: opts.parentBId,
     isElite: opts.isElite,
     isSelected: false,
+    playerId,
   });
 
   ctx.db.golfBall.insert({
@@ -201,6 +226,7 @@ function insertGenomeWithBall(
     finalX: 0,
     finalZ: 0,
     distanceToHole: 0,
+    playerId,
   });
 
   return genomeRow;
@@ -209,13 +235,13 @@ function insertGenomeWithBall(
 /**
  * Simulate all genomes in a generation: run physics, write trajectory points,
  * compute fitness, update ball/genome/generation rows.
- * Shared by simulateShots and advanceGeneration to avoid duplication.
+ * Returns true if a hole-in-one was detected and course was rotated.
  */
 function simulateAndEvaluate(
-  ctx: { db: any },
+  ctx: { db: any; random: any },
   genId: number,
   course: CourseInfo,
-): void {
+): boolean {
   const gen = ctx.db.generation.genId.find(genId);
   gen.phase = 'simulating';
   ctx.db.generation.genId.update(gen);
@@ -225,7 +251,13 @@ function simulateAndEvaluate(
   let genomeCount = 0;
   const genomeIds: number[] = [];
 
+  // Collect genome rows to process
+  const genomesToProcess: any[] = [];
   for (const genomeRow of ctx.db.genome.byGenId.filter(genId)) {
+    genomesToProcess.push(genomeRow);
+  }
+
+  for (const genomeRow of genomesToProcess) {
     const tree = parseTree(genomeRow.treeJson);
     const params = treeToSwingParams(tree, course.windX, course.windZ);
     const trajectory = simulateBall(params, course.teeX, course.teeZ, course.windX, course.windZ);
@@ -286,7 +318,123 @@ function simulateAndEvaluate(
     eventType: 'simulate',
     description: `Simulated ${genomeCount} shots. Best fitness: ${bestFitness.toFixed(4)}, Avg: ${genomeCount > 0 ? (totalFitness / genomeCount).toFixed(4) : '0'}`,
     genomeIdsJson: JSON.stringify(genomeIds),
+    playerId: genUpdated.playerId,
   });
+
+  // --- Hole-in-one detection ---
+  for (const ball of ctx.db.golfBall.byGenId.filter(genId)) {
+    if (ball.distanceToHole < HOLE_RADIUS && ball.state === 'stopped') {
+      // Found a hole-in-one!
+      const winGenome = ctx.db.genome.genomeId.find(ball.genomeId);
+      const winGen = ctx.db.generation.genId.find(genId);
+      const winPlayer = ctx.db.player.identity.find(winGen.playerId);
+      const winPlayerName = winPlayer?.name || 'Unknown';
+
+      // Get course for snapshot
+      let courseRow = null;
+      for (const c of ctx.db.golfCourse.iter()) {
+        courseRow = c;
+        break;
+      }
+      if (!courseRow) return false;
+
+      // 1. Save winning genome as champion ball
+      ctx.db.championBall.insert({
+        championId: 0,
+        playerId: winGen.playerId,
+        treeJson: winGenome.treeJson,
+        courseVersion: courseRow.courseVersion,
+        generationsToSolve: winGen.genNumber,
+      });
+
+      // 2. Save to Hall of Fame
+      ctx.db.hallOfFame.insert({
+        hofId: 0,
+        playerId: winGen.playerId,
+        playerName: winPlayerName,
+        courseVersion: courseRow.courseVersion,
+        generationsToSolve: winGen.genNumber,
+        teeX: courseRow.teeX,
+        teeZ: courseRow.teeZ,
+        holeX: courseRow.holeX,
+        holeZ: courseRow.holeZ,
+        windX: courseRow.windX,
+        windZ: courseRow.windZ,
+      });
+
+      // 3. Snapshot each player's best genome into carryOverJson
+      for (const p of ctx.db.player.iter()) {
+        let bestTree: string | null = null;
+        let bestFit = -1;
+        for (const g of ctx.db.genome.iter()) {
+          if (g.playerId.__identity_bytes ?
+              identityEquals(g.playerId, p.identity) :
+              g.playerId === p.identity) {
+            if (g.fitness > bestFit) {
+              bestFit = g.fitness;
+              bestTree = g.treeJson;
+            }
+          }
+        }
+        if (bestTree) {
+          ctx.db.player.delete(p);
+          ctx.db.player.insert({
+            identity: p.identity,
+            name: p.name,
+            color: p.color,
+            carryOverJson: bestTree,
+          });
+        }
+      }
+
+      // 4. Wipe ALL evolution data
+      for (const tp of ctx.db.trajectoryPoint.iter()) ctx.db.trajectoryPoint.delete(tp);
+      for (const b of ctx.db.golfBall.iter()) ctx.db.golfBall.delete(b);
+      for (const g of ctx.db.genome.iter()) ctx.db.genome.delete(g);
+      for (const gen of ctx.db.generation.iter()) ctx.db.generation.delete(gen);
+      for (const evt of ctx.db.gpEvent.iter()) ctx.db.gpEvent.delete(evt);
+
+      // 5. Generate new random course
+      const newVersion = courseRow.courseVersion + 1;
+      const newTeeX = (ctx.random() * 30) - 15;
+      const newTeeZ = (ctx.random() * 20) - 10;
+      const newHoleX = (ctx.random() * 30) - 15;
+      const newHoleZ = 80 + ctx.random() * 120;
+      const newWindX = (ctx.random() * 3) - 1.5;
+      const newWindZ = (ctx.random() * 1) - 0.5;
+      const dx = newHoleX - newTeeX;
+      const dz = newHoleZ - newTeeZ;
+      const newDistance = Math.round(Math.sqrt(dx * dx + dz * dz));
+
+      ctx.db.golfCourse.delete(courseRow);
+      ctx.db.golfCourse.insert({
+        holeId: 0,
+        par: 3,
+        teeX: newTeeX,
+        teeZ: newTeeZ,
+        holeX: newHoleX,
+        holeZ: newHoleZ,
+        distance: newDistance,
+        windX: newWindX,
+        windZ: newWindZ,
+        courseVersion: newVersion,
+      });
+
+      return true; // Course rotated
+    }
+  }
+
+  return false; // No hole-in-one
+}
+
+/** Compare two SpacetimeDB identities */
+function identityEquals(a: any, b: any): boolean {
+  if (a === b) return true;
+  if (a?.isEqual) return a.isEqual(b);
+  if (a?.__identity__ != null && b?.__identity__ != null) {
+    return a.__identity__ === b.__identity__;
+  }
+  return false;
 }
 
 // --- Reducers ---
@@ -308,104 +456,102 @@ export const createGame = spacetimedb.reducer(
       distance: 150,
       windX: 0.5,
       windZ: 0.2,
+      courseVersion: 1,
+    });
+  }
+);
+
+// --- register_player ---
+export const registerPlayer = spacetimedb.reducer(
+  { name: t.string() },
+  (ctx, { name }) => {
+    const sender = ctx.sender;
+    const existing = ctx.db.player.identity.find(sender);
+    if (existing) return; // Idempotent
+
+    // Assign color based on player count
+    let count = 0;
+    for (const _p of ctx.db.player.iter()) count++;
+    const color = PLAYER_COLORS[count % PLAYER_COLORS.length];
+
+    const displayName = name || `Player ${count + 1}`;
+
+    ctx.db.player.insert({
+      identity: sender,
+      name: displayName,
+      color,
+      carryOverJson: '',
     });
   }
 );
 
 // --- init_population ---
 export const initPopulation = spacetimedb.reducer(
-  { holeId: t.u32(), popSize: t.u32() },
-  (ctx, { holeId, popSize }) => {
+  { holeId: t.u32(), popSize: t.u32(), strategy: t.string(), championId: t.u32() },
+  (ctx, { holeId, popSize, strategy, championId }) => {
+    const sender = ctx.sender;
+
     // Validate hole exists
     const course = ctx.db.golfCourse.holeId.find(holeId);
     if (!course) {
       throw new Error(`Golf course with holeId ${holeId} not found`);
     }
 
-    // --- Archive best genome from previous session into Hall of Fame ---
-    let latestGen: { genId: number; genNumber: number; holeId: number; bestFitness: number; popSize: number } | null = null;
+    // Ensure player is registered
+    const playerRow = ctx.db.player.identity.find(sender);
+    if (!playerRow) {
+      throw new Error('Player not registered. Call registerPlayer first.');
+    }
+
+    // --- Snapshot best genome before cleanup ---
+    let bestTreeJson: string | null = null;
+    let bestFit = -1;
+    for (const g of ctx.db.genome.iter()) {
+      if (identityEquals(g.playerId, sender) && g.fitness > bestFit) {
+        bestFit = g.fitness;
+        bestTreeJson = g.treeJson;
+      }
+    }
+    if (bestTreeJson) {
+      ctx.db.player.delete(playerRow);
+      ctx.db.player.insert({
+        identity: sender,
+        name: playerRow.name,
+        color: playerRow.color,
+        carryOverJson: bestTreeJson,
+      });
+    }
+
+    // --- Clean up THIS player's previous data only ---
+    const myBallIds = new Set<number>();
+    for (const ball of ctx.db.golfBall.iter()) {
+      if (identityEquals(ball.playerId, sender)) {
+        myBallIds.add(ball.ballId);
+      }
+    }
+    for (const tp of ctx.db.trajectoryPoint.iter()) {
+      if (myBallIds.has(tp.ballId)) {
+        ctx.db.trajectoryPoint.delete(tp);
+      }
+    }
+    for (const ball of ctx.db.golfBall.iter()) {
+      if (identityEquals(ball.playerId, sender)) {
+        ctx.db.golfBall.delete(ball);
+      }
+    }
+    for (const g of ctx.db.genome.iter()) {
+      if (identityEquals(g.playerId, sender)) {
+        ctx.db.genome.delete(g);
+      }
+    }
     for (const gen of ctx.db.generation.iter()) {
-      if (!latestGen || gen.genNumber > latestGen.genNumber) {
-        latestGen = gen;
+      if (identityEquals(gen.playerId, sender)) {
+        ctx.db.generation.delete(gen);
       }
     }
-
-    if (latestGen && latestGen.bestFitness > 0) {
-      // Find best genome in latest generation
-      let bestGenome: { genomeId: number; fitness: number; treeJson: string; origin: string } | null = null;
-      for (const g of ctx.db.genome.byGenId.filter(latestGen.genId)) {
-        if (g.fitness > 0 && (!bestGenome || g.fitness > bestGenome.fitness)) {
-          bestGenome = g;
-        }
-      }
-
-      if (bestGenome) {
-        // Find ball for best genome
-        let bestBall: { ballId: number; distanceToHole: number } | null = null;
-        for (const b of ctx.db.golfBall.byGenId.filter(latestGen.genId)) {
-          if (b.genomeId === bestGenome.genomeId) {
-            bestBall = b;
-            break;
-          }
-        }
-
-        // Collect trajectory points
-        let trajectoryJson = '[]';
-        if (bestBall) {
-          const points: { step: number; x: number; y: number; z: number }[] = [];
-          for (const tp of ctx.db.trajectoryPoint.byBallId.filter(bestBall.ballId)) {
-            points.push({ step: tp.step, x: tp.x, y: tp.y, z: tp.z });
-          }
-          points.sort((a, b) => a.step - b.step);
-          trajectoryJson = JSON.stringify(points);
-        }
-
-        // Get course snapshot
-        const archiveCourse = ctx.db.golfCourse.holeId.find(latestGen.holeId);
-        const isHoleInOne = bestBall ? bestBall.distanceToHole < HOLE_RADIUS : false;
-
-        // Insert game_session
-        const sessionRow = ctx.db.gameSession.insert({
-          sessionId: 0,
-          holeId: latestGen.holeId,
-          totalGenerations: latestGen.genNumber,
-          bestFitness: latestGen.bestFitness,
-          achievedHoleInOne: isHoleInOne,
-          popSize: latestGen.popSize,
-        });
-
-        // Insert hall_of_fame
-        ctx.db.hallOfFame.insert({
-          hofId: 0,
-          sessionId: sessionRow.sessionId,
-          genomeTreeJson: bestGenome.treeJson,
-          fitness: bestGenome.fitness,
-          distanceToHole: bestBall?.distanceToHole ?? 0,
-          generationsToSolve: latestGen.genNumber,
-          origin: bestGenome.origin,
-          isHoleInOne,
-          teeX: archiveCourse?.teeX ?? 0,
-          teeZ: archiveCourse?.teeZ ?? 0,
-          holeX: archiveCourse?.holeX ?? 0,
-          holeZ: archiveCourse?.holeZ ?? 0,
-          windX: archiveCourse?.windX ?? 0,
-          windZ: archiveCourse?.windZ ?? 0,
-          trajectoryJson,
-        });
-      }
-    }
-
-    // Clean up all previous game data for a fresh start
-    for (const tp of ctx.db.trajectoryPoint.iter()) ctx.db.trajectoryPoint.delete(tp);
-    for (const ball of ctx.db.golfBall.iter()) ctx.db.golfBall.delete(ball);
-    for (const genome of ctx.db.genome.iter()) ctx.db.genome.delete(genome);
-    for (const gen of ctx.db.generation.iter()) ctx.db.generation.delete(gen);
-    for (const evt of ctx.db.gpEvent.iter()) ctx.db.gpEvent.delete(evt);
-    // Reset player wildcards
-    for (const p of ctx.db.player.iter()) {
-      if (p.wildcardGenomeId > 0) {
-        ctx.db.player.delete(p);
-        ctx.db.player.insert({ identity: p.identity, name: p.name, wildcardGenomeId: 0 });
+    for (const evt of ctx.db.gpEvent.iter()) {
+      if (identityEquals(evt.playerId, sender)) {
+        ctx.db.gpEvent.delete(evt);
       }
     }
 
@@ -413,38 +559,72 @@ export const initPopulation = spacetimedb.reducer(
 
     // Create generation row
     const genRow = ctx.db.generation.insert({
-      genId: 0, // autoInc
+      genId: 0,
       holeId,
       genNumber,
       phase: 'init',
       bestFitness: 0,
       avgFitness: 0,
       popSize,
+      playerId: sender,
     });
     const genId = genRow.genId;
 
-    // Generate random trees using ramped half-and-half
-    const trees = rampedHalfAndHalf(ctx.random, popSize);
+    // --- Determine elite seed based on strategy ---
+    let eliteTree: import('./gp/types.js').TreeNode | null = null;
+
+    if (strategy === 'carryOver') {
+      // Re-read player row in case we updated it above
+      const pRow = ctx.db.player.identity.find(sender);
+      if (pRow && pRow.carryOverJson && pRow.carryOverJson !== '') {
+        eliteTree = parseTree(pRow.carryOverJson);
+      }
+    } else if (strategy === 'champion' && championId > 0) {
+      const champ = ctx.db.championBall.championId.find(championId);
+      if (champ && identityEquals(champ.playerId, sender)) {
+        eliteTree = parseTree(champ.treeJson);
+      }
+    }
 
     const genomeIds: number[] = [];
 
-    for (const tree of trees) {
-      const row = insertGenomeWithBall(ctx, genId, tree, {
-        origin: 'random', parentAId: 0, parentBId: 0, isElite: false,
+    if (eliteTree) {
+      // Insert elite seed
+      const eliteRow = insertGenomeWithBall(ctx, genId, eliteTree, sender, {
+        origin: 'replication', parentAId: 0, parentBId: 0, isElite: true,
       });
-      genomeIds.push(row.genomeId);
+      genomeIds.push(eliteRow.genomeId);
+
+      // Generate remaining random trees
+      const randomTrees = rampedHalfAndHalf(ctx.random, popSize - 1);
+      for (const tree of randomTrees) {
+        const row = insertGenomeWithBall(ctx, genId, tree, sender, {
+          origin: 'random', parentAId: 0, parentBId: 0, isElite: false,
+        });
+        genomeIds.push(row.genomeId);
+      }
+    } else {
+      // All random (fresh start or fallback)
+      const trees = rampedHalfAndHalf(ctx.random, popSize);
+      for (const tree of trees) {
+        const row = insertGenomeWithBall(ctx, genId, tree, sender, {
+          origin: 'random', parentAId: 0, parentBId: 0, isElite: false,
+        });
+        genomeIds.push(row.genomeId);
+      }
     }
 
     // Log gp_event
     ctx.db.gpEvent.insert({
-      eventId: 0, // autoInc
+      eventId: 0,
       genId,
       eventType: 'init',
-      description: `Population initialized with ${popSize} genomes using ramped half-and-half (gen ${genNumber})`,
+      description: `Population initialized with ${popSize} genomes (strategy: ${strategy}, gen ${genNumber})`,
       genomeIdsJson: JSON.stringify(genomeIds),
+      playerId: sender,
     });
 
-    // Simulate all shots immediately (matches advanceGeneration behavior)
+    // Simulate all shots immediately
     simulateAndEvaluate(ctx, genId, course);
   }
 );
@@ -474,27 +654,26 @@ export const advanceGeneration = spacetimedb.reducer(
       throw new Error(`Generation ${genId} phase is '${gen.phase}', expected 'evaluated'`);
     }
 
+    // Validate ownership
+    if (!identityEquals(gen.playerId, ctx.sender)) {
+      throw new Error('You can only advance your own generations');
+    }
+
     const { popSize, holeId } = gen;
     const course = ctx.db.golfCourse.holeId.find(holeId);
     if (!course) throw new Error(`Golf course with holeId ${holeId} not found`);
 
-    // Snapshot current genomes (avoid re-querying during mutation)
+    const sender = ctx.sender;
+
+    // Snapshot current genomes
     const genomes: { genomeId: number; fitness: number; treeJson: string }[] = [];
     for (const g of ctx.db.genome.byGenId.filter(genId)) {
       genomes.push({ genomeId: g.genomeId, fitness: g.fitness, treeJson: g.treeJson });
     }
 
     // --- 1. Selection ---
-    let wildcardId: number | null = null;
-    for (const p of ctx.db.player.iter()) {
-      if (p.wildcardGenomeId > 0 && genomes.some(g => g.genomeId === p.wildcardGenomeId)) {
-        wildcardId = p.wildcardGenomeId;
-        break;
-      }
-    }
-
     const numParents = Math.max(2, Math.floor(popSize / 2));
-    const selectedIds = tournamentSelection(ctx.random, genomes, numParents, DEFAULT_TOURNAMENT_SIZE, wildcardId);
+    const selectedIds = tournamentSelection(ctx.random, genomes, numParents, DEFAULT_TOURNAMENT_SIZE, null);
 
     for (const sid of selectedIds) {
       const gRow = ctx.db.genome.genomeId.find(sid);
@@ -511,6 +690,7 @@ export const advanceGeneration = spacetimedb.reducer(
       eventId: 0, genId, eventType: 'select',
       description: `Selected ${selectedIds.length} parents via tournament selection (size ${DEFAULT_TOURNAMENT_SIZE})`,
       genomeIdsJson: JSON.stringify(selectedIds),
+      playerId: sender,
     });
 
     // --- 2. Create new generation + replicate elite ---
@@ -522,10 +702,11 @@ export const advanceGeneration = spacetimedb.reducer(
     const newGenRow = ctx.db.generation.insert({
       genId: 0, holeId, genNumber: gen.genNumber + 1,
       phase: 'init', bestFitness: 0, avgFitness: 0, popSize,
+      playerId: sender,
     });
     const newGenId = newGenRow.genId;
 
-    const eliteRow = insertGenomeWithBall(ctx, newGenId, parseTree(bestGenome.treeJson), {
+    const eliteRow = insertGenomeWithBall(ctx, newGenId, parseTree(bestGenome.treeJson), sender, {
       origin: 'replication', parentAId: bestGenome.genomeId, parentBId: 0, isElite: true,
     });
 
@@ -533,6 +714,7 @@ export const advanceGeneration = spacetimedb.reducer(
       eventId: 0, genId: newGenId, eventType: 'replicate',
       description: `Elite genome ${bestGenome.genomeId} (fitness ${bestGenome.fitness.toFixed(4)}) replicated`,
       genomeIdsJson: JSON.stringify([eliteRow.genomeId]),
+      playerId: sender,
     });
 
     // --- 3. Crossover ---
@@ -555,7 +737,7 @@ export const advanceGeneration = spacetimedb.reducer(
       const parentB = parseTree(selectedGenomes[pBIdx].treeJson);
       const childTree = clampTree(ctx.random, subtreeCrossover(ctx.random, parentA, parentB));
 
-      const childRow = insertGenomeWithBall(ctx, newGenId, childTree, {
+      const childRow = insertGenomeWithBall(ctx, newGenId, childTree, sender, {
         origin: 'crossover',
         parentAId: selectedGenomes[pAIdx].genomeId,
         parentBId: selectedGenomes[pBIdx].genomeId,
@@ -571,12 +753,34 @@ export const advanceGeneration = spacetimedb.reducer(
       eventId: 0, genId: newGenId, eventType: 'crossover',
       description: `Created ${numOffspring} offspring via subtree crossover`,
       genomeIdsJson: JSON.stringify(offspringIds),
+      playerId: sender,
     });
 
-    // --- 4. Mutation ---
+    // --- 4. Mutation (with stagnation detection) ---
+    // Check if fitness has stagnated over recent generations
+    let stagnant = false;
+    const myGens: { genNumber: number; bestFitness: number }[] = [];
+    for (const g of ctx.db.generation.iter()) {
+      if (identityEquals(g.playerId, sender) && g.phase === 'evaluated') {
+        myGens.push({ genNumber: g.genNumber, bestFitness: g.bestFitness });
+      }
+    }
+    if (myGens.length >= STAGNATION_GENS) {
+      myGens.sort((a, b) => b.genNumber - a.genNumber);
+      const recentBest = myGens[0].bestFitness;
+      let unchangedCount = 0;
+      for (let i = 1; i < myGens.length && i < STAGNATION_GENS; i++) {
+        if (Math.abs(myGens[i].bestFitness - recentBest) < 0.001) {
+          unchangedCount++;
+        }
+      }
+      stagnant = unchangedCount >= STAGNATION_GENS - 1;
+    }
+
+    const mutationRate = stagnant ? STAGNATION_MUTATION_RATE : DEFAULT_MUTATION_RATE;
     const mutatedIds: number[] = [];
     for (const oid of offspringIds) {
-      if (ctx.random() < DEFAULT_MUTATION_RATE) {
+      if (ctx.random() < mutationRate) {
         const gRow = ctx.db.genome.genomeId.find(oid);
         if (gRow) {
           const tree = clampTree(ctx.random, mutateTree(ctx.random, parseTree(gRow.treeJson)));
@@ -592,15 +796,22 @@ export const advanceGeneration = spacetimedb.reducer(
 
     ctx.db.gpEvent.insert({
       eventId: 0, genId: newGenId, eventType: 'mutate',
-      description: `Mutated ${mutatedIds.length} of ${numOffspring} offspring (rate ${DEFAULT_MUTATION_RATE})`,
+      description: `Mutated ${mutatedIds.length} of ${numOffspring} offspring (rate ${mutationRate.toFixed(2)}${stagnant ? ' STAGNATION BOOST' : ''})`,
       genomeIdsJson: JSON.stringify(mutatedIds),
+      playerId: sender,
     });
 
-    // --- 5. Clean up old trajectory points (keep last 2 gens) ---
+    // --- 5. Clean up old trajectory points (keep last 2 gens for THIS player) ---
+    const myGenIds = new Set<number>();
+    for (const g of ctx.db.generation.iter()) {
+      if (identityEquals(g.playerId, sender)) {
+        myGenIds.add(g.genId);
+      }
+    }
     const keepGenIds = new Set<number>([genId, newGenId]);
     const ballsToClean: number[] = [];
     for (const ball of ctx.db.golfBall.iter()) {
-      if (!keepGenIds.has(ball.genId)) {
+      if (identityEquals(ball.playerId, sender) && !keepGenIds.has(ball.genId)) {
         ballsToClean.push(ball.ballId);
       }
     }
@@ -611,7 +822,8 @@ export const advanceGeneration = spacetimedb.reducer(
     }
 
     // --- 6. Simulate new generation ---
-    simulateAndEvaluate(ctx, newGenId, course);
+    const courseRotated = simulateAndEvaluate(ctx, newGenId, course);
+    // If course rotated, all data was wiped — caller handles this via client
   }
 );
 
@@ -619,34 +831,12 @@ export const advanceGeneration = spacetimedb.reducer(
 export const setWildcard = spacetimedb.reducer(
   { genomeId: t.u32() },
   (ctx, { genomeId }) => {
-    // Verify genome exists
     const g = ctx.db.genome.genomeId.find(genomeId);
     if (!g) throw new Error(`Genome ${genomeId} not found`);
 
-    // Find or create player row
-    const sender = ctx.sender;
-    const playerRow = ctx.db.player.identity.find(sender);
-    if (playerRow) {
-      ctx.db.player.delete(playerRow);
-      ctx.db.player.insert({
-        identity: sender,
-        name: playerRow.name,
-        wildcardGenomeId: genomeId,
-      });
-    } else {
-      ctx.db.player.insert({
-        identity: sender,
-        name: '',
-        wildcardGenomeId: genomeId,
-      });
+    // Validate ownership
+    if (!identityEquals(g.playerId, ctx.sender)) {
+      throw new Error('You can only sponsor your own genomes');
     }
-  }
-);
-
-// --- clear_hall_of_fame ---
-export const clearHallOfFame = spacetimedb.reducer(
-  (ctx) => {
-    for (const row of ctx.db.hallOfFame.iter()) ctx.db.hallOfFame.delete(row);
-    for (const row of ctx.db.gameSession.iter()) ctx.db.gameSession.delete(row);
   }
 );
