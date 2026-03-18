@@ -2,7 +2,7 @@
 
 A 3D golf game where players evolve swing strategies through genetic programming. Instead of manually aiming each shot, you initialize a population of randomized GP trees that encode swing parameters (launch angle, power, spin), then watch natural selection optimize them generation by generation until one finds the hole.
 
-<video src="https://github.com/clouvelai/EvoGolf/raw/main/evogolf_demo.mp4" autoplay loop muted playsinline width="100%"></video>
+![EvoGolf gameplay — evolving golf swings over 10 generations](evogolf_demo.gif)
 
 ## How It Works
 
