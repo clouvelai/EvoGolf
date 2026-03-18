@@ -10,6 +10,16 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
+export const GameSession = __t.object("GameSession", {
+  sessionId: __t.u32(),
+  holeId: __t.u32(),
+  totalGenerations: __t.u32(),
+  bestFitness: __t.f64(),
+  achievedHoleInOne: __t.bool(),
+  popSize: __t.u32(),
+});
+export type GameSession = __Infer<typeof GameSession>;
+
 export const Generation = __t.object("Generation", {
   genId: __t.u32(),
   holeId: __t.u32(),
@@ -68,6 +78,25 @@ export const GpEvent = __t.object("GpEvent", {
   genomeIdsJson: __t.string(),
 });
 export type GpEvent = __Infer<typeof GpEvent>;
+
+export const HallOfFame = __t.object("HallOfFame", {
+  hofId: __t.u32(),
+  sessionId: __t.u32(),
+  genomeTreeJson: __t.string(),
+  fitness: __t.f64(),
+  distanceToHole: __t.f64(),
+  generationsToSolve: __t.u32(),
+  origin: __t.string(),
+  isHoleInOne: __t.bool(),
+  teeX: __t.f64(),
+  teeZ: __t.f64(),
+  holeX: __t.f64(),
+  holeZ: __t.f64(),
+  windX: __t.f64(),
+  windZ: __t.f64(),
+  trajectoryJson: __t.string(),
+});
+export type HallOfFame = __Infer<typeof HallOfFame>;
 
 export const Player = __t.object("Player", {
   identity: __t.identity(),

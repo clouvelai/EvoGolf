@@ -35,6 +35,7 @@ import {
 
 // Import all reducer arg schemas
 import AdvanceGenerationReducer from "./advance_generation_reducer";
+import ClearHallOfFameReducer from "./clear_hall_of_fame_reducer";
 import CreateGameReducer from "./create_game_reducer";
 import InitPopulationReducer from "./init_population_reducer";
 import SetWildcardReducer from "./set_wildcard_reducer";
@@ -43,11 +44,13 @@ import SimulateShotsReducer from "./simulate_shots_reducer";
 // Import all procedure arg schemas
 
 // Import all table schema definitions
+import GameSessionRow from "./game_session_table";
 import GenerationRow from "./generation_table";
 import GenomeRow from "./genome_table";
 import GolfBallRow from "./golf_ball_table";
 import GolfCourseRow from "./golf_course_table";
 import GpEventRow from "./gp_event_table";
+import HallOfFameRow from "./hall_of_fame_table";
 import PlayerRow from "./player_table";
 import TrajectoryPointRow from "./trajectory_point_table";
 
@@ -55,6 +58,17 @@ import TrajectoryPointRow from "./trajectory_point_table";
 
 /** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */
 const tablesSchema = __schema({
+  gameSession: __table({
+    name: 'game_session',
+    indexes: [
+      { accessor: 'sessionId', name: 'game_session_session_id_idx_btree', algorithm: 'btree', columns: [
+        'sessionId',
+      ] },
+    ],
+    constraints: [
+      { name: 'game_session_session_id_key', constraint: 'unique', columns: ['sessionId'] },
+    ],
+  }, GameSessionRow),
   generation: __table({
     name: 'generation',
     indexes: [
@@ -116,6 +130,17 @@ const tablesSchema = __schema({
       { name: 'gp_event_event_id_key', constraint: 'unique', columns: ['eventId'] },
     ],
   }, GpEventRow),
+  hallOfFame: __table({
+    name: 'hall_of_fame',
+    indexes: [
+      { accessor: 'hofId', name: 'hall_of_fame_hof_id_idx_btree', algorithm: 'btree', columns: [
+        'hofId',
+      ] },
+    ],
+    constraints: [
+      { name: 'hall_of_fame_hof_id_key', constraint: 'unique', columns: ['hofId'] },
+    ],
+  }, HallOfFameRow),
   player: __table({
     name: 'player',
     indexes: [
@@ -146,6 +171,7 @@ const tablesSchema = __schema({
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("advance_generation", AdvanceGenerationReducer),
+  __reducerSchema("clear_hall_of_fame", ClearHallOfFameReducer),
   __reducerSchema("create_game", CreateGameReducer),
   __reducerSchema("init_population", InitPopulationReducer),
   __reducerSchema("set_wildcard", SetWildcardReducer),

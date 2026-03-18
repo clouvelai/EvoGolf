@@ -12,6 +12,9 @@ import EventLog from './components/EventLog';
 import GenomeTreePanel from './components/GenomeTreePanel';
 import GPControlPanel from './components/GPControlPanel';
 import WinOverlay from './components/WinOverlay';
+import HallOfFame from './components/HallOfFame';
+import HofBallReplay from './components/HofBallReplay';
+import HofTrajectoryLine from './components/HofTrajectoryLine';
 
 const HOLE_RADIUS = 0.5;
 const MAX_AUTO_GENS = 1000;
@@ -23,11 +26,14 @@ export default function App() {
   const [genomes] = useTable(tables.genome);
   const [balls] = useTable(tables.golfBall);
   const [gpEvents] = useTable(tables.gpEvent);
+  const [hofEntries] = useTable(tables.hallOfFame);
 
   const [selectedGenomeId, setSelectedGenomeId] = useState<number | null>(null);
   const [autoEvolving, setAutoEvolving] = useState(false);
   const [speedMultiplier, setSpeedMultiplier] = useState(1);
   const [winDismissed, setWinDismissed] = useState(false);
+  const [hofMode, setHofMode] = useState(false);
+  const [selectedHofId, setSelectedHofId] = useState<number | null>(null);
 
   // Auto-create game on first connect (exactly once)
   const gameCreatedRef = useRef(false);
@@ -158,6 +164,21 @@ export default function App() {
     conn.reducers.initPopulation({ holeId: 1, popSize: 12 });
   }, [getConnection]);
 
+  const handleOpenHof = useCallback(() => {
+    setHofMode(true);
+    setAutoEvolving(false);
+  }, []);
+
+  const handleCloseHof = useCallback(() => {
+    setHofMode(false);
+    setSelectedHofId(null);
+  }, []);
+
+  const selectedHofEntry = useMemo(() => {
+    if (selectedHofId == null) return null;
+    return hofEntries.find((e) => e.hofId === selectedHofId) ?? null;
+  }, [hofEntries, selectedHofId]);
+
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#081828', position: 'relative' }}>
       {!isActive && (
@@ -182,42 +203,50 @@ export default function App() {
         />
       )}
 
-      {/* ── GP Control Panel ── */}
-      <GPControlPanel
-        phase={currentGen?.phase ?? null}
-        genNumber={currentGen?.genNumber ?? null}
-        bestFitness={currentGen?.bestFitness ?? null}
-        avgFitness={currentGen?.avgFitness ?? null}
-        hasPopulation={generations.length > 0}
-        autoEvolving={autoEvolving}
-        speedMultiplier={speedMultiplier}
-        onInitialize={handleInitialize}
-        onNextGen={handleNextGen}
-        onToggleAutoEvolve={handleToggleAutoEvolve}
-        onSpeedChange={setSpeedMultiplier}
-      />
+      {/* ── Evolution UI (hidden in HoF mode) ── */}
+      {!hofMode && (
+        <>
+          <GPControlPanel
+            phase={currentGen?.phase ?? null}
+            genNumber={currentGen?.genNumber ?? null}
+            bestFitness={currentGen?.bestFitness ?? null}
+            avgFitness={currentGen?.avgFitness ?? null}
+            hasPopulation={generations.length > 0}
+            autoEvolving={autoEvolving}
+            speedMultiplier={speedMultiplier}
+            hofCount={hofEntries.length}
+            onInitialize={handleInitialize}
+            onNextGen={handleNextGen}
+            onToggleAutoEvolve={handleToggleAutoEvolve}
+            onSpeedChange={setSpeedMultiplier}
+            onOpenHof={handleOpenHof}
+          />
+          <FitnessChart generations={sortedGens} />
+          <EventLog events={sortedEvents} />
+          <GenomeTreePanel
+            genome={selectedGenome}
+            genomes={currentGenGenomes}
+            selectedGenomeId={selectedGenomeId}
+            onSelectGenome={handleSelectGenome}
+            onSponsor={handleSponsor}
+            sponsorDisabled={selectedGenomeId == null}
+          />
+          {winningBall && currentGen && (
+            <WinOverlay
+              genNumber={currentGen.genNumber}
+              onPlayAgain={handlePlayAgain}
+            />
+          )}
+        </>
+      )}
 
-      {/* ── Fitness Chart ── */}
-      <FitnessChart generations={sortedGens} />
-
-      {/* ── Event Log ── */}
-      <EventLog events={sortedEvents} />
-
-      {/* ── Genome Tree Panel ── */}
-      <GenomeTreePanel
-        genome={selectedGenome}
-        genomes={currentGenGenomes}
-        selectedGenomeId={selectedGenomeId}
-        onSelectGenome={handleSelectGenome}
-        onSponsor={handleSponsor}
-        sponsorDisabled={selectedGenomeId == null}
-      />
-
-      {/* ── Win Overlay ── */}
-      {winningBall && currentGen && (
-        <WinOverlay
-          genNumber={currentGen.genNumber}
-          onPlayAgain={handlePlayAgain}
+      {/* ── Hall of Fame UI ── */}
+      {hofMode && (
+        <HallOfFame
+          entries={hofEntries}
+          selectedHofId={selectedHofId}
+          onSelectEntry={setSelectedHofId}
+          onBack={handleCloseHof}
         />
       )}
 
@@ -238,16 +267,32 @@ export default function App() {
         <pointLight position={[0, -5, 70]} intensity={0.5} color="#2a6090" distance={150} />
 
         <CourseGround course={course} />
-        <BallSwarm
-          selectedGenomeId={selectedGenomeId}
-          onSelectGenome={handleSelectGenome}
-          currentGenId={currentGenId}
-          speedMultiplier={speedMultiplier}
-        />
-        <TrajectoryLines
-          selectedGenomeId={selectedGenomeId}
-          currentGenId={currentGenId}
-        />
+        {!hofMode && (
+          <>
+            <BallSwarm
+              selectedGenomeId={selectedGenomeId}
+              onSelectGenome={handleSelectGenome}
+              currentGenId={currentGenId}
+              speedMultiplier={speedMultiplier}
+            />
+            <TrajectoryLines
+              selectedGenomeId={selectedGenomeId}
+              currentGenId={currentGenId}
+            />
+          </>
+        )}
+        {hofMode && selectedHofEntry && (
+          <>
+            <HofBallReplay
+              trajectoryJson={selectedHofEntry.trajectoryJson}
+              isHoleInOne={selectedHofEntry.isHoleInOne}
+            />
+            <HofTrajectoryLine
+              trajectoryJson={selectedHofEntry.trajectoryJson}
+              isHoleInOne={selectedHofEntry.isHoleInOne}
+            />
+          </>
+        )}
         <OrbitControls
           target={[0, 2, 55]}
           maxPolarAngle={Math.PI / 2.1}

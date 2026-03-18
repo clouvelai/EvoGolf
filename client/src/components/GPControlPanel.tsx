@@ -8,10 +8,12 @@ type GPControlPanelProps = {
   hasPopulation: boolean;
   autoEvolving: boolean;
   speedMultiplier: number;
+  hofCount: number;
   onInitialize: () => void;
   onNextGen: () => void;
   onToggleAutoEvolve: () => void;
   onSpeedChange: (speed: number) => void;
+  onOpenHof: () => void;
 };
 
 export default function GPControlPanel({
@@ -22,10 +24,12 @@ export default function GPControlPanel({
   hasPopulation,
   autoEvolving,
   speedMultiplier,
+  hofCount,
   onInitialize,
   onNextGen,
   onToggleAutoEvolve,
   onSpeedChange,
+  onOpenHof,
 }: GPControlPanelProps) {
   const canNextGen = phase === 'evaluated' && !autoEvolving;
 
@@ -86,6 +90,13 @@ export default function GPControlPanel({
           disabled={!hasPopulation}
         >
           {autoEvolving ? 'Stop' : 'Auto-Evolve'}
+        </button>
+        <button
+          className="ui-btn ui-btn--gold"
+          onClick={onOpenHof}
+          disabled={hofCount === 0}
+        >
+          Hall of Fame ({hofCount})
         </button>
       </div>
 

@@ -19,6 +19,8 @@ const connectionBuilder = DbConnection.builder()
         tables.trajectoryPoint,
         tables.gpEvent,
         tables.player,
+        tables.gameSession,
+        tables.hallOfFame,
       ]);
   })
   .onConnectError((_ctx, error) => {

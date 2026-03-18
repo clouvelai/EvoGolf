@@ -7,7 +7,7 @@ import { treeDepth, nodeCount, serializeTree, parseTree, clampTree } from './gp/
 import { tournamentSelection } from './gp/selection.js';
 import { subtreeCrossover } from './gp/crossover.js';
 import { mutateTree } from './gp/mutation.js';
-import { FITNESS_UNEVAL, DEFAULT_TOURNAMENT_SIZE, DEFAULT_MUTATION_RATE } from './constants.js';
+import { FITNESS_UNEVAL, DEFAULT_TOURNAMENT_SIZE, DEFAULT_MUTATION_RATE, HOLE_RADIUS } from './constants.js';
 
 // --- Tables ---
 
@@ -113,6 +113,39 @@ const player = table(
   }
 );
 
+const gameSession = table(
+  { name: 'game_session', public: true },
+  {
+    sessionId: t.u32().primaryKey().autoInc(),
+    holeId: t.u32(),
+    totalGenerations: t.u32(),
+    bestFitness: t.f64(),
+    achievedHoleInOne: t.bool(),
+    popSize: t.u32(),
+  }
+);
+
+const hallOfFame = table(
+  { name: 'hall_of_fame', public: true },
+  {
+    hofId: t.u32().primaryKey().autoInc(),
+    sessionId: t.u32(),
+    genomeTreeJson: t.string(),
+    fitness: t.f64(),
+    distanceToHole: t.f64(),
+    generationsToSolve: t.u32(),
+    origin: t.string(),
+    isHoleInOne: t.bool(),
+    teeX: t.f64(),
+    teeZ: t.f64(),
+    holeX: t.f64(),
+    holeZ: t.f64(),
+    windX: t.f64(),
+    windZ: t.f64(),
+    trajectoryJson: t.string(),
+  }
+);
+
 // --- Schema ---
 
 const spacetimedb = schema({
@@ -123,6 +156,8 @@ const spacetimedb = schema({
   trajectoryPoint,
   gpEvent,
   player,
+  gameSession,
+  hallOfFame,
 });
 export default spacetimedb;
 
@@ -287,6 +322,79 @@ export const initPopulation = spacetimedb.reducer(
       throw new Error(`Golf course with holeId ${holeId} not found`);
     }
 
+    // --- Archive best genome from previous session into Hall of Fame ---
+    let latestGen: { genId: number; genNumber: number; holeId: number; bestFitness: number; popSize: number } | null = null;
+    for (const gen of ctx.db.generation.iter()) {
+      if (!latestGen || gen.genNumber > latestGen.genNumber) {
+        latestGen = gen;
+      }
+    }
+
+    if (latestGen && latestGen.bestFitness > 0) {
+      // Find best genome in latest generation
+      let bestGenome: { genomeId: number; fitness: number; treeJson: string; origin: string } | null = null;
+      for (const g of ctx.db.genome.byGenId.filter(latestGen.genId)) {
+        if (g.fitness > 0 && (!bestGenome || g.fitness > bestGenome.fitness)) {
+          bestGenome = g;
+        }
+      }
+
+      if (bestGenome) {
+        // Find ball for best genome
+        let bestBall: { ballId: number; distanceToHole: number } | null = null;
+        for (const b of ctx.db.golfBall.byGenId.filter(latestGen.genId)) {
+          if (b.genomeId === bestGenome.genomeId) {
+            bestBall = b;
+            break;
+          }
+        }
+
+        // Collect trajectory points
+        let trajectoryJson = '[]';
+        if (bestBall) {
+          const points: { step: number; x: number; y: number; z: number }[] = [];
+          for (const tp of ctx.db.trajectoryPoint.byBallId.filter(bestBall.ballId)) {
+            points.push({ step: tp.step, x: tp.x, y: tp.y, z: tp.z });
+          }
+          points.sort((a, b) => a.step - b.step);
+          trajectoryJson = JSON.stringify(points);
+        }
+
+        // Get course snapshot
+        const archiveCourse = ctx.db.golfCourse.holeId.find(latestGen.holeId);
+        const isHoleInOne = bestBall ? bestBall.distanceToHole < HOLE_RADIUS : false;
+
+        // Insert game_session
+        const sessionRow = ctx.db.gameSession.insert({
+          sessionId: 0,
+          holeId: latestGen.holeId,
+          totalGenerations: latestGen.genNumber,
+          bestFitness: latestGen.bestFitness,
+          achievedHoleInOne: isHoleInOne,
+          popSize: latestGen.popSize,
+        });
+
+        // Insert hall_of_fame
+        ctx.db.hallOfFame.insert({
+          hofId: 0,
+          sessionId: sessionRow.sessionId,
+          genomeTreeJson: bestGenome.treeJson,
+          fitness: bestGenome.fitness,
+          distanceToHole: bestBall?.distanceToHole ?? 0,
+          generationsToSolve: latestGen.genNumber,
+          origin: bestGenome.origin,
+          isHoleInOne,
+          teeX: archiveCourse?.teeX ?? 0,
+          teeZ: archiveCourse?.teeZ ?? 0,
+          holeX: archiveCourse?.holeX ?? 0,
+          holeZ: archiveCourse?.holeZ ?? 0,
+          windX: archiveCourse?.windX ?? 0,
+          windZ: archiveCourse?.windZ ?? 0,
+          trajectoryJson,
+        });
+      }
+    }
+
     // Clean up all previous game data for a fresh start
     for (const tp of ctx.db.trajectoryPoint.iter()) ctx.db.trajectoryPoint.delete(tp);
     for (const ball of ctx.db.golfBall.iter()) ctx.db.golfBall.delete(ball);
@@ -335,6 +443,9 @@ export const initPopulation = spacetimedb.reducer(
       description: `Population initialized with ${popSize} genomes using ramped half-and-half (gen ${genNumber})`,
       genomeIdsJson: JSON.stringify(genomeIds),
     });
+
+    // Simulate all shots immediately (matches advanceGeneration behavior)
+    simulateAndEvaluate(ctx, genId, course);
   }
 );
 
@@ -529,5 +640,13 @@ export const setWildcard = spacetimedb.reducer(
         wildcardGenomeId: genomeId,
       });
     }
+  }
+);
+
+// --- clear_hall_of_fame ---
+export const clearHallOfFame = spacetimedb.reducer(
+  (ctx) => {
+    for (const row of ctx.db.hallOfFame.iter()) ctx.db.hallOfFame.delete(row);
+    for (const row of ctx.db.gameSession.iter()) ctx.db.gameSession.delete(row);
   }
 );
