@@ -134,10 +134,10 @@ export default function App() {
 
   const handleInitialize = useCallback(() => {
     const conn = getConnection();
-    if (!conn) return;
-    conn.reducers.initPopulation({ holeId: 1, popSize: 12 });
+    if (!conn || !course) return;
+    conn.reducers.initPopulation({ holeId: course.holeId, popSize: 12 });
     setWinDismissed(false);
-  }, [getConnection]);
+  }, [getConnection, course]);
 
   const handleNextGen = useCallback(() => {
     const conn = getConnection();
@@ -160,9 +160,9 @@ export default function App() {
     setAutoEvolving(false);
     setSelectedGenomeId(null);
     const conn = getConnection();
-    if (!conn) return;
-    conn.reducers.initPopulation({ holeId: 1, popSize: 12 });
-  }, [getConnection]);
+    if (!conn || !course) return;
+    conn.reducers.initPopulation({ holeId: course.holeId, popSize: 12 });
+  }, [getConnection, course]);
 
   const handleOpenHof = useCallback(() => {
     setHofMode(true);
