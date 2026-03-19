@@ -19,7 +19,8 @@ This roadmap tracks progress across conversations. At the start of each session:
 | 3 | 3D Visualization | `feat/3d-viz` (worktree) | DONE | Phase 1 | Balls animate along trajectories |
 | — | Merge 2+3 | `main` | DONE | Phases 2, 3 | tsc passes, app loads |
 | 4 | GP Operators | `main` | DONE | Merge 2+3 | 5+ generations, fitness improves |
-| 5 | UI & Polish | `main` | NOT STARTED | Phase 4 | Full game loop playable |
+| 5 | UI & Polish | `main` | DONE | Phase 4 | Full game loop playable |
+| 6 | Multiplayer + Breeding Tuning | `main` | DONE | Phase 5 | Multiple players evolve independently, elite breeding works |
 
 ## Parallelism Strategy
 
@@ -31,7 +32,7 @@ These touch **zero overlapping files**, so they run in parallel worktrees and me
 
 ## Current State
 
-**Next action:** Start Phase 5 (UI & Polish)
+**Next action:** All phases complete. Future work: further GP tuning, mobile support, deployment.
 
 ---
 
@@ -42,3 +43,5 @@ These touch **zero overlapping files**, so they run in parallel worktrees and me
 - **Phase 3** (2026-03-17): 3D Visualization complete. BallSwarm (InstancedMesh), TrajectoryLines (drei Line), useBallAnimation hook. All components handle empty state.
 - **Merge 2+3** (2026-03-17): Clean merge, zero conflicts. Post-merge fix: `import type` for SpacetimeDB bundler, persistent identity via `spacetime login --server-issued-login local`. Verified: 12 genomes, 2260 trajectory points, all fitness scores computed.
 - **Phase 4** (2026-03-17): GP Operators complete. Tournament selection, subtree crossover, 3-type mutation (subtree/point/hoist), elitism. `advanceGeneration` orchestrator does full pipeline: select → replicate elite → crossover → mutate → cleanup old trajectories → simulate. Verified: 6 generations (0-5), best fitness improved 10x (0.0099 → 0.1039), avg fitness 5x (0.0073 → 0.0353). `setWildcard` reducer for player genome selection.
+- **Phase 5** (2026-03-18): UI & Polish complete. Swing Lab (genome inspector with English descriptions + param bars), GPControlPanel with strategy selection, FitnessChart, EventLog, HUD, CameraController (follow/green-view modes), HallOfFame, WinOverlay.
+- **Phase 6** (2026-03-18–19): Multiplayer + breeding tuning. Per-player identity and independent evolution. Leaderboard with opponent inspection. Elite-centered breeding (1+4+1+6=12). Fine-tune mutation (`fineTuneMutate` with Gaussian const perturbation). Launch angle decoupled from 4-pass evaluation → sigmoid(sum_of_consts) mapped to [8,60]. Course rotation on hole-in-one with genome carry-over. Champion balls and Hall of Fame.

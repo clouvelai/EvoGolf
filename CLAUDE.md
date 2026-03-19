@@ -5,14 +5,33 @@
 **PRD:** `EVOGOLF_PRD.md` has full spec — table schemas, reducer specs, component specs, physics model, GP operator details.
 **Core rule: ALL GP logic runs server-side in SpacetimeDB reducers.**
 
+## Current State (as of 2026-03-19)
+
+The game is fully playable with multiplayer. Phases 1-4 of the roadmap are complete. Phase 5 (UI & Polish) was done informally — the game has a complete UI with Swing Lab, player list, fitness chart, event log, HUD, camera modes, and auto-evolve.
+
+**Key features implemented beyond the original roadmap:**
+- **Multiplayer** — per-player identity, independent evolution, leaderboard, opponent trajectory inspection
+- **Elite-centered breeding** — 1 elite + 4 elite mutations + 1 elite crossover + 6 exploration = 12
+- **Swing Lab** — genome inspector with English descriptions, param bars, population grid grouped by elite family vs exploration
+- **Course rotation** — hole-in-one triggers new random course, best genomes carry over
+- **Hall of Fame** — winning genomes archived with course snapshots
+- **Champion balls** — players can restart with a previous winning genome
+- **Stagnation detection** — mutation rate boost after 10 unchanged generations
+
+**Known issues / active tuning work:**
+- Launch angle uses `sigmoid(sum_of_consts)` mapping to [8, 60] — decoupled from the 4-pass tree evaluation because the GP couldn't independently control it via the shared tree
+- Elite mutations mix fine-tune (Gaussian const perturbation, stddev 1.5) and structural (point mutation) — was too gentle at stddev 0.3, may still need tuning
+- Client has a duplicate tree evaluator in `client/src/lib/swingDescription.ts` — must stay in sync with `server/src/gp/evaluate.ts`
+
 ## Session Startup
 
 Every conversation MUST start here:
 
-1. Read `ROADMAP.md` — shows current phase and status
-2. Read `.planning/phases/phase-N-*.md` for the next incomplete phase
-3. Read `.planning/PROTOCOL.md` for execution rules (worktrees, commits, mid-phase stops)
-4. Execute tasks, check them off, run verification gate, update ROADMAP.md
+1. Read this section ("Current State") for context
+2. Read `ROADMAP.md` — shows phase status
+3. If continuing roadmap work, read `.planning/phases/phase-N-*.md` for the next incomplete phase
+4. Read `.planning/PROTOCOL.md` for execution rules (worktrees, commits, mid-phase stops)
+5. Execute tasks, check them off, run verification gate, update ROADMAP.md
 
 ---
 
@@ -104,7 +123,7 @@ const genome = table(
     treeDepth: t.u32(),
     nodeCount: t.u32(),
     fitness: t.f64(),        // -1 = unevaluated sentinel
-    origin: t.string(),      // 'random' | 'crossover' | 'mutation' | 'replication'
+    origin: t.string(),      // 'random' | 'crossover' | 'mutation' | 'replication' | 'elite_mutation' | 'elite_crossover'
     parentAId: t.u32(),
     parentBId: t.u32(),
     isElite: t.bool(),
@@ -174,19 +193,42 @@ const player = table(
   {
     identity: t.identity().unique(),
     name: t.string(),
-    wildcardGenomeId: t.u32(),
+    color: t.string(),
+    carryOverJson: t.string(),   // best genome JSON carried to next course
+  }
+);
+
+const championBall = table(
+  { name: 'champion_ball', public: true,
+    indexes: [{ accessor: 'byPlayerId', algorithm: 'btree', columns: ['playerId'] }] },
+  {
+    championId: t.u32().primaryKey().autoInc(),
+    playerId: t.identity(),
+    treeJson: t.string(),
+    courseVersion: t.u32(),
+    generationsToSolve: t.u32(),
+  }
+);
+
+const hallOfFame = table(
+  { name: 'hall_of_fame', public: true },
+  {
+    hofId: t.u32().primaryKey().autoInc(),
+    playerId: t.identity(),
+    playerName: t.string(),
+    courseVersion: t.u32(),
+    generationsToSolve: t.u32(),
+    teeX: t.f64(), teeZ: t.f64(),
+    holeX: t.f64(), holeZ: t.f64(),
+    windX: t.f64(), windZ: t.f64(),
   }
 );
 
 // --- Schema (REQUIRED — wraps all tables, must be default export) ---
 const spacetimedb = schema({
-  golfCourse,
-  generation,
-  genome,
-  golfBall,
-  trajectoryPoint,
-  gpEvent,
-  player,
+  golfCourse, generation, genome, golfBall,
+  trajectoryPoint, gpEvent, player,
+  championBall, hallOfFame,
 });
 export default spacetimedb;
 
@@ -217,9 +259,10 @@ export const initPopulation = spacetimedb.reducer(
 
 // --- Full reducer list ---
 // createGame()           — seed golf course (idempotent)
-// initPopulation(holeId, popSize) — gen random pop + simulate
+// registerPlayer(name)   — register player identity + assign color
+// initPopulation(holeId, popSize, strategy, championId) — gen pop + simulate (strategy: 'fresh' | 'carryOver' | 'champion')
 // simulateShots(genId)   — run physics on a generation
-// advanceGeneration(genId) — orchestrator: select → replicate elite → crossover → mutate → cleanup old trajectories → simulate new gen
+// advanceGeneration(genId) — orchestrator: select → elite breed → crossover → mutate → cleanup → simulate
 // setWildcard(genomeId)  — player picks a genome to force-include in next selection
 
 // --- CRUD inside reducers ---
@@ -379,7 +422,7 @@ type TerminalNode = {
 type TreeNode = FuncNode | TerminalNode;
 
 type SwingParams = {
-  launch_angle: number; // clamped [10, 80] degrees
+  launch_angle: number; // [8, 60] degrees (sigmoid-mapped from const sum)
   power: number;        // clamped [0, 1]
   spin_x: number;       // clamped [-1, 1]
   spin_z: number;       // clamped [-1, 1]
@@ -388,7 +431,7 @@ type SwingParams = {
 
 **Tree generation:** Ramped half-and-half — for depths 2 through `MAX_TREE_DEPTH`, half use "full" method (all branches to max depth), half use "grow" (random early termination). See PRD "init_population" for full spec.
 
-**Tree evaluation:** Context-sensitive 4-pass. The tree is evaluated once per swing param with `activeParam` set in `EvalContext`. Param terminals (`launch_angle`, `power`, `spin_x`, `spin_z`) return their base value only when they match `activeParam`, otherwise 0. Wind and const terminals are always active. This gives the GP independent control over each swing parameter.
+**Tree evaluation:** Mixed approach. Power, spin_x, spin_z use context-sensitive evaluation (tree evaluated with `activeParam` — param terminals return base value when matching, 0 otherwise). Launch angle is **decoupled**: `sigmoid(sum_of_all_consts * 0.5)` mapped to [8, 60] degrees — this gives the GP direct control via const terminals without needing a `launch_angle` terminal in the tree. The client has a **duplicate evaluator** in `client/src/lib/swingDescription.ts` that must stay in sync with the server's `evaluate.ts`.
 
 **Physics model:** See PRD "simulate_shots" for the full physics spec (gravity, drag, wind, bounce, roll).
 
@@ -397,12 +440,12 @@ type SwingParams = {
 ```
 types.ts      — TreeNode, SwingParams, EvalContext, type guards
 tree-gen.ts   — rampedHalfAndHalf, generateFull, generateGrow, randomTerminal
-evaluate.ts   — evaluateTree (context-sensitive 4-pass), treeToSwingParams
+evaluate.ts   — evaluateTree (context-sensitive), treeToSwingParams, sumConsts
 physics.ts    — simulateBall (trajectory generation)
 fitness.ts    — computeFitness, distanceToHole
 selection.ts  — tournamentSelection (with wildcard override)
 crossover.ts  — subtreeCrossover
-mutation.ts   — mutateTree (subtree / point / hoist, equal probability)
+mutation.ts   — mutateTree (subtree / point / hoist), fineTuneMutate (Gaussian const perturbation)
 utils.ts      — treeDepth, nodeCount, replaceAtIndex, clampTree, serializeTree, parseTree
 ```
 
@@ -418,16 +461,22 @@ utils.ts      — treeDepth, nodeCount, replaceAtIndex, clampTree, serializeTree
 ### Constants (server/src/constants.ts, mirror in client if needed)
 
 ```typescript
-export const MAX_SPEED = 70;          // m/s
-export const GRAVITY = 9.8;           // m/s²
-export const DT = 0.05;              // simulation timestep
-export const MAX_SIM_STEPS = 200;     // max trajectory points per ball
-export const MAX_TREE_DEPTH = 6;      // GP tree depth cap
+export const MAX_SPEED = 70;            // m/s
+export const GRAVITY = 9.8;             // m/s²
+export const DT = 0.05;                // simulation timestep
+export const MAX_SIM_STEPS = 200;       // max trajectory points per ball
+export const MAX_TREE_DEPTH = 6;        // GP tree depth cap
 export const DEFAULT_POP_SIZE = 12;
-export const DEFAULT_MUTATION_RATE = 0.3;
-export const DEFAULT_TOURNAMENT_SIZE = 3;
-export const FITNESS_UNEVAL = -1;     // sentinel: unevaluated fitness
-export const HOLE_RADIUS = 0.5;       // yards, win threshold
+export const DEFAULT_MUTATION_RATE = 0.5;
+export const DEFAULT_TOURNAMENT_SIZE = 4;
+export const STAGNATION_GENS = 10;      // gens without improvement → mutation boost
+export const STAGNATION_MUTATION_RATE = 0.8;
+export const ELITE_MUTATION_SLOTS = 4;  // fine-tune + structural mutations of elite
+export const ELITE_CROSSOVER_SLOTS = 1; // elite × top finisher
+export const EXPLORATION_SLOTS = 6;     // tournament crossover + mutation
+// Breeding: 1 elite + 4 elite_mutation + 1 elite_crossover + 6 exploration = 12
+export const FITNESS_UNEVAL = -1;       // sentinel: unevaluated fitness
+export const HOLE_RADIUS = 0.5;         // yards, win threshold
 ```
 
 ---
@@ -442,7 +491,7 @@ export const HOLE_RADIUS = 0.5;       // yards, win threshold
 6. **Calling reducers in useFrame** — fires 60/sec. Only call from event handlers or useEffect.
 7. **setState in useFrame** — re-renders every frame. Mutate refs directly.
 8. **div_safe not handled** — `div_safe(a, b)` must return 0 when `|b| < 0.001`.
-9. **Not clamping SwingParams** — clamp `launch_angle` [10,80], `power` [0,1], spins [-1,1].
+9. **Not clamping SwingParams** — launch_angle [8,60] via sigmoid, `power` [0,1], spins [-1,1].
 10. **Float equality** — never `===` floats. Use `Math.abs(a - b) < 0.001`.
 
 ---
@@ -467,7 +516,7 @@ Fix failures before moving on.
 
 ## Architecture Invariants
 
-1. **All GP logic is server-side.** Client never evaluates trees, runs physics, or modifies fitness.
+1. **All GP logic is server-side.** Client never runs physics or modifies fitness. Exception: `client/src/lib/swingDescription.ts` has a read-only tree evaluator for displaying swing params in the Swing Lab — it must mirror `server/src/gp/evaluate.ts`.
 2. **Single source of truth is SpacetimeDB.** Client reads from `useTable` subscriptions. No shadow state.
 3. **Genome trees are JSON strings.** `treeJson: string` column. Parse on use, serialize on write.
 4. **Tree depth capped at 6.** Enforced after every crossover and mutation.

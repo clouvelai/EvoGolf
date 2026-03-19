@@ -101,6 +101,8 @@
 .ui-badge--replication { background: rgba(255, 215, 0, 0.2); color: #ffd700; }
 .ui-badge--crossover { background: rgba(68, 255, 170, 0.2); color: #44ffaa; }
 .ui-badge--mutation  { background: rgba(255, 85, 170, 0.2); color: #ff55aa; }
+.ui-badge--elite_mutation  { background: rgba(255, 170, 68, 0.2); color: #ffaa44; }
+.ui-badge--elite_crossover { background: rgba(170, 255, 68, 0.2); color: #aaff44; }
 
 /* ── Scrollbar ── */
 

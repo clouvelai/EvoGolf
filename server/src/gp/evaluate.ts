@@ -7,12 +7,10 @@ const BASE_VALUES: Record<string, number> = {
   spin_z: 0,
 };
 
-const PARAM_TERMINALS: Set<string> = new Set(['launch_angle', 'power', 'spin_x', 'spin_z']);
-
 /**
  * Evaluate a GP tree node to produce a numeric value.
- * Param terminals (launch_angle, power, spin_x, spin_z) return their base
- * value only when they match ctx.activeParam, otherwise 0.
+ * Param terminals return their base value only when they match
+ * ctx.activeParam, otherwise 0.
  * Wind and const terminals are always active.
  */
 export function evaluateTree(node: TreeNode, ctx: EvalContext): number {
@@ -97,15 +95,37 @@ function clamp(v: number, min: number, max: number): number {
 
 /**
  * Evaluate the tree 4 times with a different activeParam context each time.
- * Each param terminal only contributes its base value when it matches the
- * active param, giving the GP independent control over each swing parameter.
+ * Launch angle uses a separate evaluation: sum all const values in the tree
+ * and map to [8, 60] via sigmoid, giving the GP direct control over angle
+ * through its const terminals without needing a launch_angle terminal.
  */
 export function treeToSwingParams(tree: TreeNode, windX: number, windZ: number): SwingParams {
   const base = { wind_x: windX, wind_z: windZ };
+
+  // Launch angle: sum of all consts → sigmoid → [8, 60]
+  const constSum = sumConsts(tree);
+  const sigmoid = 1 / (1 + Math.exp(-constSum * 0.5));  // 0..1
+  const launch_angle = 8 + sigmoid * 52;                 // [8, 60]
+
   return {
-    launch_angle: clamp(evaluateTree(tree, { ...base, activeParam: 'launch_angle' }), 10, 80),
-    power:        clamp(evaluateTree(tree, { ...base, activeParam: 'power' }), 0, 1),
-    spin_x:       clamp(evaluateTree(tree, { ...base, activeParam: 'spin_x' }), -1, 1),
-    spin_z:       clamp(evaluateTree(tree, { ...base, activeParam: 'spin_z' }), -1, 1),
+    launch_angle,
+    power:  clamp(evaluateTree(tree, { ...base, activeParam: 'power' }), 0, 1),
+    spin_x: clamp(evaluateTree(tree, { ...base, activeParam: 'spin_x' }), -1, 1),
+    spin_z: clamp(evaluateTree(tree, { ...base, activeParam: 'spin_z' }), -1, 1),
   };
+}
+
+/** Sum all const terminal values in the tree */
+function sumConsts(node: TreeNode): number {
+  if (isTerminalNode(node)) {
+    return node.terminal === 'const' ? (node.value ?? 0) : 0;
+  }
+  if (isFuncNode(node)) {
+    let sum = 0;
+    for (const child of node.children) {
+      sum += sumConsts(child);
+    }
+    return sum;
+  }
+  return 0;
 }

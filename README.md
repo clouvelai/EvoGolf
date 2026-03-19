@@ -25,13 +25,36 @@ All GP logic (tree generation, evaluation, physics, selection, crossover, mutati
 
 ## Features
 
-- **GP Engine** — ramped half-and-half tree generation, context-sensitive 4-pass evaluation, tournament selection, subtree crossover, 3-type mutation (subtree/point/hoist)
-- **3D Visualization** — instanced mesh ball swarm with animated trajectories, selectable genomes, orbit camera
+- **GP Engine** — ramped half-and-half tree generation, context-sensitive evaluation, tournament selection, subtree crossover, 3-type mutation (subtree/point/hoist), plus fine-tune mutation for exploitation
+- **Elite-Centered Breeding** — each generation: 1 elite (best genome carried forward) + 4 elite mutations (fine-tune + structural) + 1 elite crossover + 6 exploration offspring
+- **Multiplayer** — multiple players evolve independently on the same course in real time, with a live leaderboard and the ability to inspect opponents' swings
+- **3D Visualization** — instanced mesh ball swarm with animated trajectories, selectable genomes, orbit camera with follow and green-view modes
+- **Swing Lab** — click any genome to see English descriptions ("High lob, full power, slight draw"), parameter bars, and the raw GP syntax tree
 - **Auto-Evolve** — hands-off mode with adjustable speed; stops on hole-in-one
-- **Genome Inspector** — click any ball or genome to view its syntax tree and fitness
-- **Wildcard Sponsorship** — force-include a favorite genome in the next generation's selection
-- **Hall of Fame** — winning genomes are archived with trajectory replay
-- **Real-time Reactivity** — SpacetimeDB subscriptions push all state changes to the client instantly
+- **Course Rotation** — when any player sinks a ball, a new random course is generated; best genomes carry over
+- **Hall of Fame** — winning players and their generation counts are recorded across courses
+- **Stagnation Detection** — mutation rate boosts from 50% to 80% after 10 unchanged generations
+- **Real-time Reactivity** — SpacetimeDB subscriptions push all state changes to every client instantly
+
+## Multiplayer
+
+EvoGolf supports simultaneous multiplayer — each player runs their own evolutionary population against the same course. Open multiple browser tabs to `localhost:5173` to simulate multiple players.
+
+Each player gets:
+- Their own color-coded balls and trajectories
+- Independent evolution (Tee Off / Evolve controls per player)
+- A shared leaderboard showing distance-to-hole rankings
+- The ability to click other players' balls to inspect their genomes in the Swing Lab
+
+When any player's genome finds the hole, the course rotates for everyone. Players can carry their best genome to the next course or start fresh.
+
+**Breeding strategy per generation (12 genomes):**
+| Slot | Count | Strategy |
+|------|-------|----------|
+| Elite | 1 | Best genome replicated unchanged |
+| Elite Mutations | 4 | 2 fine-tune (Gaussian const perturbation) + 2 structural (point mutation) |
+| Elite Crossover | 1 | Elite crossed with top finisher |
+| Exploration | 6 | Tournament-selected crossover + mutation |
 
 ## Getting Started
 
@@ -78,17 +101,23 @@ server/
       fitness.ts      # Distance-to-hole fitness scoring
       selection.ts    # Tournament selection with wildcard override
       crossover.ts    # Subtree crossover with depth capping
-      mutation.ts     # Subtree, point, and hoist mutation
+      mutation.ts     # Subtree, point, hoist, and fine-tune mutation
 
 client/
   src/
     App.tsx           # Main app — state management, 3D canvas, UI layout
+    lib/
+      swingDescription # Client-side tree evaluator for Swing Lab display
+      ballFilters      # Filter balls/genomes by player identity
+      colors           # Origin-based color coding
     components/
       CourseGround    # 3D golf course terrain
       BallSwarm       # Instanced mesh for all balls
       TrajectoryLines # Animated shot trajectories
+      CameraController # Orbit, follow, green-view camera modes
       GPControlPanel  # Initialize, evolve, auto-evolve controls
-      GenomeTreePanel # Genome list + syntax tree viewer
+      SwingLab        # Genome inspector — descriptions, param bars, tree view
+      PlayerList      # Multiplayer leaderboard with opponent inspection
       FitnessChart    # Generation-over-generation fitness plot
       EventLog        # GP operation event feed
       HUD             # Course info overlay

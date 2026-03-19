@@ -6,8 +6,8 @@ import { computeFitness, distanceToHole } from './gp/fitness.js';
 import { treeDepth, nodeCount, serializeTree, parseTree, clampTree } from './gp/utils.js';
 import { tournamentSelection } from './gp/selection.js';
 import { subtreeCrossover } from './gp/crossover.js';
-import { mutateTree } from './gp/mutation.js';
-import { FITNESS_UNEVAL, DEFAULT_TOURNAMENT_SIZE, DEFAULT_MUTATION_RATE, HOLE_RADIUS, STAGNATION_GENS, STAGNATION_MUTATION_RATE } from './constants.js';
+import { mutateTree, pointMutateTree, fineTuneMutate } from './gp/mutation.js';
+import { FITNESS_UNEVAL, DEFAULT_TOURNAMENT_SIZE, DEFAULT_MUTATION_RATE, HOLE_RADIUS, STAGNATION_GENS, STAGNATION_MUTATION_RATE, ELITE_MUTATION_SLOTS, ELITE_CROSSOVER_SLOTS, EXPLORATION_SLOTS } from './constants.js';
 
 // --- Player color palette ---
 const PLAYER_COLORS = [
@@ -693,7 +693,12 @@ export const advanceGeneration = spacetimedb.reducer(
       playerId: sender,
     });
 
-    // --- 2. Create new generation + replicate elite ---
+    // --- 2. Create new generation + elite-centered breeding ---
+    // Safety check: slot counts must sum to popSize
+    if (1 + ELITE_MUTATION_SLOTS + ELITE_CROSSOVER_SLOTS + EXPLORATION_SLOTS !== popSize) {
+      throw new Error(`Breeding slot mismatch: 1 + ${ELITE_MUTATION_SLOTS} + ${ELITE_CROSSOVER_SLOTS} + ${EXPLORATION_SLOTS} !== ${popSize}`);
+    }
+
     let bestGenome = genomes[0];
     for (const g of genomes) {
       if (g.fitness > bestGenome.fitness) bestGenome = g;
@@ -706,7 +711,9 @@ export const advanceGeneration = spacetimedb.reducer(
     });
     const newGenId = newGenRow.genId;
 
-    const eliteRow = insertGenomeWithBall(ctx, newGenId, parseTree(bestGenome.treeJson), sender, {
+    // --- 2a. Elite seed (1 slot) ---
+    const eliteTree = parseTree(bestGenome.treeJson);
+    const eliteRow = insertGenomeWithBall(ctx, newGenId, eliteTree, sender, {
       origin: 'replication', parentAId: bestGenome.genomeId, parentBId: 0, isElite: true,
     });
 
@@ -717,12 +724,62 @@ export const advanceGeneration = spacetimedb.reducer(
       playerId: sender,
     });
 
-    // --- 3. Crossover ---
-    const selectedGenomes = genomes.filter(g => selectedIds.includes(g.genomeId));
-    const numOffspring = popSize - 1;
-    const offspringIds: number[] = [];
+    // --- 2b. Elite mutations: half fine-tune (const perturbation), half point-mutate (structural) ---
+    const eliteMutationIds: number[] = [];
+    for (let i = 0; i < ELITE_MUTATION_SLOTS; i++) {
+      let mutated = parseTree(bestGenome.treeJson);
+      if (i % 2 === 0) {
+        // Fine-tune: perturb 2-3 const values
+        const numTweaks = ctx.random.integerInRange(2, 3);
+        for (let j = 0; j < numTweaks; j++) {
+          mutated = fineTuneMutate(ctx.random, mutated);
+        }
+      } else {
+        // Structural: point mutation (re-randomize consts or swap terminal names)
+        mutated = pointMutateTree(ctx.random, mutated);
+        mutated = pointMutateTree(ctx.random, mutated);
+      }
+      mutated = clampTree(ctx.random, mutated);
+      const row = insertGenomeWithBall(ctx, newGenId, mutated, sender, {
+        origin: 'elite_mutation', parentAId: bestGenome.genomeId, parentBId: 0, isElite: false,
+      });
+      eliteMutationIds.push(row.genomeId);
+    }
 
-    for (let i = 0; i < numOffspring; i++) {
+    ctx.db.gpEvent.insert({
+      eventId: 0, genId: newGenId, eventType: 'elite_mutate',
+      description: `Created ${ELITE_MUTATION_SLOTS} elite fine-tune mutations`,
+      genomeIdsJson: JSON.stringify(eliteMutationIds),
+      playerId: sender,
+    });
+
+    // --- 2c. Elite crossovers (3 slots) — elite × top finishers ---
+    const eliteCrossoverIds: number[] = [];
+    // Sort by fitness descending to find top non-elite partners
+    const sortedGenomes = [...genomes].sort((a, b) => b.fitness - a.fitness);
+    const partners = sortedGenomes.filter(g => g.genomeId !== bestGenome.genomeId).slice(0, ELITE_CROSSOVER_SLOTS);
+
+    for (let i = 0; i < ELITE_CROSSOVER_SLOTS; i++) {
+      const partner = partners[i % partners.length]; // wrap if fewer partners than slots
+      const childTree = clampTree(ctx.random, subtreeCrossover(ctx.random, eliteTree, parseTree(partner.treeJson)));
+      const row = insertGenomeWithBall(ctx, newGenId, childTree, sender, {
+        origin: 'elite_crossover', parentAId: bestGenome.genomeId, parentBId: partner.genomeId, isElite: false,
+      });
+      eliteCrossoverIds.push(row.genomeId);
+    }
+
+    ctx.db.gpEvent.insert({
+      eventId: 0, genId: newGenId, eventType: 'elite_crossover',
+      description: `Created ${ELITE_CROSSOVER_SLOTS} elite crossovers with top finishers`,
+      genomeIdsJson: JSON.stringify(eliteCrossoverIds),
+      playerId: sender,
+    });
+
+    // --- 2d. Exploration (6 slots) — tournament crossover + mutation ---
+    const selectedGenomes = genomes.filter(g => selectedIds.includes(g.genomeId));
+    const explorationIds: number[] = [];
+
+    for (let i = 0; i < EXPLORATION_SLOTS; i++) {
       const pAIdx = ctx.random.integerInRange(0, selectedGenomes.length - 1);
       let pBIdx = ctx.random.integerInRange(0, selectedGenomes.length - 1);
       if (selectedGenomes.length > 1) {
@@ -743,7 +800,7 @@ export const advanceGeneration = spacetimedb.reducer(
         parentBId: selectedGenomes[pBIdx].genomeId,
         isElite: false,
       });
-      offspringIds.push(childRow.genomeId);
+      explorationIds.push(childRow.genomeId);
     }
 
     newGenRow.phase = 'breeding';
@@ -751,13 +808,12 @@ export const advanceGeneration = spacetimedb.reducer(
 
     ctx.db.gpEvent.insert({
       eventId: 0, genId: newGenId, eventType: 'crossover',
-      description: `Created ${numOffspring} offspring via subtree crossover`,
-      genomeIdsJson: JSON.stringify(offspringIds),
+      description: `Created ${EXPLORATION_SLOTS} exploration offspring via subtree crossover`,
+      genomeIdsJson: JSON.stringify(explorationIds),
       playerId: sender,
     });
 
-    // --- 4. Mutation (with stagnation detection) ---
-    // Check if fitness has stagnated over recent generations
+    // --- 3. Mutation on exploration slots (with stagnation detection) ---
     let stagnant = false;
     const myGens: { genNumber: number; bestFitness: number }[] = [];
     for (const g of ctx.db.generation.iter()) {
@@ -779,7 +835,7 @@ export const advanceGeneration = spacetimedb.reducer(
 
     const mutationRate = stagnant ? STAGNATION_MUTATION_RATE : DEFAULT_MUTATION_RATE;
     const mutatedIds: number[] = [];
-    for (const oid of offspringIds) {
+    for (const oid of explorationIds) {
       if (ctx.random() < mutationRate) {
         const gRow = ctx.db.genome.genomeId.find(oid);
         if (gRow) {
@@ -796,7 +852,7 @@ export const advanceGeneration = spacetimedb.reducer(
 
     ctx.db.gpEvent.insert({
       eventId: 0, genId: newGenId, eventType: 'mutate',
-      description: `Mutated ${mutatedIds.length} of ${numOffspring} offspring (rate ${mutationRate.toFixed(2)}${stagnant ? ' STAGNATION BOOST' : ''})`,
+      description: `Mutated ${mutatedIds.length} of ${EXPLORATION_SLOTS} exploration offspring (rate ${mutationRate.toFixed(2)}${stagnant ? ' STAGNATION BOOST' : ''})`,
       genomeIdsJson: JSON.stringify(mutatedIds),
       playerId: sender,
     });

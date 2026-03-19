@@ -8,6 +8,8 @@ type CameraControllerProps = {
   bestBallPosition: [number, number, number] | null;
   courseCenter: [number, number, number];
   isRotating: boolean;
+  viewMode: 'tee' | 'green';
+  holePosition: [number, number, number];
 };
 
 /**
@@ -21,6 +23,8 @@ export default function CameraController({
   bestBallPosition,
   courseCenter,
   isRotating,
+  viewMode,
+  holePosition,
 }: CameraControllerProps) {
   const controlsRef = useRef<any>(null);
   const targetVec = useRef(new THREE.Vector3(courseCenter[0], courseCenter[1], courseCenter[2]));
@@ -31,6 +35,17 @@ export default function CameraController({
   const normalPos = useRef(new THREE.Vector3(-45, 50, -30));
   const rotationPhaseRef = useRef<'idle' | 'ascending' | 'descending'>('idle');
   const rotationTimeRef = useRef(0);
+
+  // Track view mode transitions
+  const viewModeTransitioning = useRef(false);
+  const prevViewMode = useRef(viewMode);
+
+  useEffect(() => {
+    if (prevViewMode.current !== viewMode) {
+      viewModeTransitioning.current = true;
+      prevViewMode.current = viewMode;
+    }
+  }, [viewMode]);
 
   // Handle rotation animation start/end
   useEffect(() => {
@@ -51,10 +66,9 @@ export default function CameraController({
     const phase = rotationPhaseRef.current;
 
     if (phase === 'ascending') {
-      // Pull camera to bird's eye over 0.8s
       rotationTimeRef.current += delta;
       const t = Math.min(rotationTimeRef.current / 0.8, 1);
-      const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      const ease = 1 - Math.pow(1 - t, 3);
 
       camera.position.lerp(birdEyePos.current, ease * 0.05);
       targetVec.current.lerp(new THREE.Vector3(0, 0, 70), ease * 0.05);
@@ -63,10 +77,9 @@ export default function CameraController({
     }
 
     if (phase === 'descending') {
-      // Swoop camera back to normal over 0.8s
       rotationTimeRef.current += delta;
       const t = Math.min(rotationTimeRef.current / 0.8, 1);
-      const ease = t * t * (3 - 2 * t); // smoothstep
+      const ease = t * t * (3 - 2 * t);
 
       camera.position.lerp(normalPos.current, ease * 0.06);
       targetVec.current.lerp(
@@ -77,6 +90,39 @@ export default function CameraController({
 
       if (t >= 1) {
         rotationPhaseRef.current = 'idle';
+      }
+      return;
+    }
+
+    // View mode transition (tee <-> green)
+    if (viewModeTransitioning.current) {
+      let goalPos: THREE.Vector3;
+      let goalTarget: THREE.Vector3;
+
+      if (viewMode === 'green') {
+        // Camera behind green, looking back toward tee
+        // Position: behind hole (further Z), elevated, slightly offset
+        goalPos = new THREE.Vector3(
+          holePosition[0] + 8,
+          18,
+          holePosition[2] + 30,
+        );
+        // Look at the green/hole area
+        goalTarget = new THREE.Vector3(holePosition[0], 0.5, holePosition[2]);
+      } else {
+        // Tee view: default position
+        goalPos = new THREE.Vector3(-45, 50, -30);
+        goalTarget = new THREE.Vector3(courseCenter[0], courseCenter[1], courseCenter[2]);
+      }
+
+      const lerpSpeed = delta * 2.5;
+      camera.position.lerp(goalPos, lerpSpeed);
+      targetVec.current.lerp(goalTarget, lerpSpeed);
+      controls.target.copy(targetVec.current);
+
+      // Check if close enough to stop transitioning
+      if (camera.position.distanceTo(goalPos) < 0.5) {
+        viewModeTransitioning.current = false;
       }
       return;
     }

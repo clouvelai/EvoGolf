@@ -1,41 +1,56 @@
-const PHASES = ['init', 'simulating', 'evaluated', 'selecting', 'breeding', 'complete'];
-
 type GPControlPanelProps = {
   phase: string | null;
   genNumber: number | null;
-  bestFitness: number | null;
-  avgFitness: number | null;
   hasPopulation: boolean;
   autoEvolving: boolean;
   speedMultiplier: number;
   hofCount: number;
   followMode: boolean;
+  showMySwarm: boolean;
+  viewMode: 'tee' | 'green';
   onInitialize: () => void;
   onNextGen: () => void;
   onToggleAutoEvolve: () => void;
   onSpeedChange: (speed: number) => void;
   onOpenHof: () => void;
   onToggleFollow: () => void;
+  onToggleSwarm: () => void;
+  onToggleView: () => void;
 };
+
+function statusText(phase: string | null): string {
+  switch (phase) {
+    case 'simulating': return 'Balls in the air...';
+    case 'selecting':
+    case 'breeding': return 'Evolving new swings...';
+    case 'evaluated': return 'Ready';
+    case 'complete': return 'Done';
+    case 'init': return 'Initializing...';
+    default: return '';
+  }
+}
 
 export default function GPControlPanel({
   phase,
   genNumber,
-  bestFitness,
-  avgFitness,
   hasPopulation,
   autoEvolving,
   speedMultiplier,
   hofCount,
   followMode,
+  showMySwarm,
+  viewMode,
   onInitialize,
   onNextGen,
   onToggleAutoEvolve,
   onSpeedChange,
   onOpenHof,
   onToggleFollow,
+  onToggleSwarm,
+  onToggleView,
 }: GPControlPanelProps) {
   const canNextGen = phase === 'evaluated' && !autoEvolving;
+  const status = statusText(phase);
 
   return (
     <div
@@ -53,22 +68,15 @@ export default function GPControlPanel({
         minWidth: 420,
       }}
     >
-      {/* Phase indicator */}
-      {phase && (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'center' }}>
-          {PHASES.map((p) => {
-            const idx = PHASES.indexOf(p);
-            const currentIdx = PHASES.indexOf(phase);
-            let cls = 'phase-dot';
-            if (idx < currentIdx) cls += ' phase-dot--done';
-            else if (idx === currentIdx) cls += ' phase-dot--active';
-            return (
-              <div key={p} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                <div className={cls} />
-                <span style={{ fontSize: 8, opacity: 0.4 }}>{p}</span>
-              </div>
-            );
-          })}
+      {/* Status text */}
+      {status && (
+        <div style={{
+          textAlign: 'center',
+          fontSize: 11,
+          opacity: 0.6,
+          fontStyle: 'italic',
+        }}>
+          {status}
         </div>
       )}
 
@@ -79,21 +87,21 @@ export default function GPControlPanel({
           onClick={onInitialize}
           disabled={hasPopulation}
         >
-          Initialize
+          Tee Off
         </button>
         <button
           className="ui-btn"
           onClick={onNextGen}
           disabled={!canNextGen}
         >
-          Next Gen
+          Evolve
         </button>
         <button
           className={`ui-btn ui-btn--pink ${autoEvolving ? 'ui-btn--active' : ''}`}
           onClick={onToggleAutoEvolve}
           disabled={!hasPopulation}
         >
-          {autoEvolving ? 'Stop' : 'Auto-Evolve'}
+          {autoEvolving ? 'Pause' : 'Auto'}
         </button>
         <button
           className={`ui-btn ${followMode ? 'ui-btn--active' : ''}`}
@@ -105,26 +113,33 @@ export default function GPControlPanel({
           {followMode ? 'Free Cam' : 'Follow'}
         </button>
         <button
+          className={`ui-btn ${viewMode === 'green' ? 'ui-btn--active ui-btn--green' : ''}`}
+          onClick={onToggleView}
+          title={viewMode === 'tee' ? 'Switch to green view' : 'Switch to tee view'}
+        >
+          {viewMode === 'tee' ? 'Green View' : 'Tee View'}
+        </button>
+        <button
+          className={`ui-btn ${showMySwarm ? 'ui-btn--active' : ''}`}
+          onClick={onToggleSwarm}
+          disabled={!hasPopulation}
+          title={showMySwarm ? 'Show only best ball per player' : 'Show all your balls'}
+        >
+          {showMySwarm ? 'Best Only' : 'All Balls'}
+        </button>
+        <button
           className="ui-btn ui-btn--gold"
           onClick={onOpenHof}
           disabled={hofCount === 0}
         >
-          HoF ({hofCount})
+          Hall of Fame ({hofCount})
         </button>
       </div>
 
-      {/* Stats + speed row */}
+      {/* Speed slider row */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>
         {genNumber != null && (
-          <span style={{ opacity: 0.7 }}>
-            Gen {genNumber}
-            {bestFitness != null && bestFitness >= 0 && (
-              <> · Best: <span style={{ color: '#ffd700' }}>{bestFitness.toFixed(4)}</span></>
-            )}
-            {avgFitness != null && avgFitness >= 0 && (
-              <> · Avg: {avgFitness.toFixed(4)}</>
-            )}
-          </span>
+          <span style={{ opacity: 0.5, fontSize: 10 }}>Gen {genNumber}</span>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={{ opacity: 0.5, fontSize: 10 }}>{speedMultiplier.toFixed(1)}x</span>

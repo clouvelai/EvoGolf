@@ -14,6 +14,8 @@ const EVENT_COLORS: Record<string, string> = {
   crossover: '#44ffaa',
   mutate: '#ff55aa',
   replicate: '#ffd700',
+  elite_mutate: '#ffaa44',
+  elite_crossover: '#aaff44',
 };
 
 type EventLogProps = {

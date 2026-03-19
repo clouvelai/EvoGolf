@@ -9,7 +9,7 @@ import TrajectoryLines from './components/TrajectoryLines';
 import HUD from './components/HUD';
 import FitnessChart from './components/FitnessChart';
 import EventLog from './components/EventLog';
-import GenomeTreePanel from './components/GenomeTreePanel';
+import SwingLab from './components/SwingLab';
 import GPControlPanel from './components/GPControlPanel';
 import CourseRotationOverlay from './components/CourseRotationOverlay';
 import StrategyPicker from './components/StrategyPicker';
@@ -19,6 +19,7 @@ import CameraController from './components/CameraController';
 import WinCelebration from './components/WinCelebration';
 import RotationAnimation from './components/RotationAnimation';
 import Minimap from './components/Minimap';
+import { bestBallPerPlayer } from './lib/ballFilters';
 
 const MAX_AUTO_GENS = 1000;
 
@@ -41,7 +42,10 @@ export default function App() {
   const [gamePhase, setGamePhase] = useState<GamePhase>('playing');
   const [hofMode, setHofMode] = useState(false);
   const [followMode, setFollowMode] = useState(false);
+  const [showMySwarm, setShowMySwarm] = useState(false);
   const [celebrating, setCelebrating] = useState(false);
+  const [inspectedPlayerId, setInspectedPlayerId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'tee' | 'green'>('tee');
 
   // Track course version to detect rotation
   const courseVersionRef = useRef<number | null>(null);
@@ -142,12 +146,6 @@ export default function App() {
     return genomes.filter((g) => g.genId === currentGenId);
   }, [genomes, currentGenId]);
 
-  // Selected genome
-  const selectedGenome = useMemo(() => {
-    if (selectedGenomeId == null) return null;
-    return genomes.find((g) => g.genomeId === selectedGenomeId) ?? null;
-  }, [genomes, selectedGenomeId]);
-
   // Best ball in my current gen
   const bestBall = useMemo(() => {
     const currentBalls = balls.filter((b) => b.genId === currentGenId && b.state === 'stopped');
@@ -158,6 +156,49 @@ export default function App() {
     }
     return best;
   }, [balls, currentGenId]);
+
+  // Effective genome: manual selection falls back to best ball's genome
+  const effectiveGenomeId = selectedGenomeId ?? bestBall?.genomeId ?? null;
+  const isAutoSelected = selectedGenomeId == null && effectiveGenomeId != null;
+
+  const effectiveGenome = useMemo(() => {
+    if (effectiveGenomeId == null) return null;
+    return genomes.find((g) => g.genomeId === effectiveGenomeId) ?? null;
+  }, [genomes, effectiveGenomeId]);
+
+  // Selected ball's individual distance to hole
+  const selectedBallDistance = useMemo(() => {
+    if (effectiveGenomeId == null) return null;
+    const ball = balls.find(b => b.genomeId === effectiveGenomeId && b.state === 'stopped');
+    return ball?.distanceToHole ?? null;
+  }, [balls, effectiveGenomeId]);
+
+  // Inspected player's best genome (for viewing opponent swings)
+  const inspectedPlayerData = useMemo(() => {
+    if (!inspectedPlayerId) return null;
+    const player = players.find(p => p.identity.toHexString() === inspectedPlayerId);
+    if (!player) return null;
+    // Find this player's latest generation
+    let latestGen: typeof generations[number] | null = null;
+    for (const gen of generations) {
+      if (gen.playerId.toHexString() === inspectedPlayerId) {
+        if (!latestGen || gen.genNumber > latestGen.genNumber) latestGen = gen;
+      }
+    }
+    if (!latestGen) return null;
+    // Find their best stopped ball
+    let bestBallForPlayer: typeof balls[number] | null = null;
+    for (const ball of balls) {
+      if (ball.genId !== latestGen.genId || ball.state !== 'stopped') continue;
+      if (!bestBallForPlayer || ball.distanceToHole < bestBallForPlayer.distanceToHole) {
+        bestBallForPlayer = ball;
+      }
+    }
+    if (!bestBallForPlayer) return null;
+    const genome = genomes.find(g => g.genomeId === bestBallForPlayer!.genomeId);
+    if (!genome) return null;
+    return { genome, playerName: player.name, distance: bestBallForPlayer.distanceToHole };
+  }, [inspectedPlayerId, players, generations, balls, genomes]);
 
   // Sorted events (my events only)
   const sortedEvents = useMemo(() => {
@@ -204,6 +245,11 @@ export default function App() {
     return balls.filter((b) => activeGenIds.has(b.genId));
   }, [generations, balls]);
 
+  // Filtered balls for 3D view (1 best per player or full swarm)
+  const filteredBalls = useMemo(() => {
+    return bestBallPerPlayer(allActiveBalls, myIdentity, showMySwarm);
+  }, [allActiveBalls, myIdentity, showMySwarm]);
+
   // Best ball position for camera follow
   const bestBallPosition = useMemo((): [number, number, number] | null => {
     if (!bestBall) return null;
@@ -226,7 +272,9 @@ export default function App() {
     return [course.holeX, 0.5, course.holeZ];
   }, [course]);
 
-  // Auto-evolve logic
+
+
+  // Auto-evolve logic — delay matches animation duration so full flight plays out
   useEffect(() => {
     if (!autoEvolving || !currentGen) return;
     if (currentGen.phase !== 'evaluated') return;
@@ -242,16 +290,37 @@ export default function App() {
     const conn = getConnection();
     if (!conn) return;
 
+    // Animation takes BASE_ANIMATION_DURATION / speedMultiplier seconds
+    // Wait for full animation + 0.5s pause so the user sees the result
+    const animDuration = (4.0 / speedMultiplier) * 1000;
+    const delay = animDuration + 500;
+
     const timer = setTimeout(() => {
       conn.reducers.advanceGeneration({ genId: currentGen.genId });
-    }, 2000);
+    }, delay);
 
     return () => clearTimeout(timer);
-  }, [autoEvolving, currentGen, gamePhase, getConnection]);
+  }, [autoEvolving, currentGen, gamePhase, getConnection, speedMultiplier]);
 
   // Handlers
   const handleSelectGenome = useCallback((genomeId: number | null) => {
     setSelectedGenomeId(genomeId);
+    if (genomeId != null) setInspectedPlayerId(null);
+  }, []);
+
+  const handleSelectPlayer = useCallback((identity: any) => {
+    const hexId = identity.toHexString();
+    if (myIdentity && isMyIdentity(identity)) {
+      setInspectedPlayerId(null);
+    } else if (inspectedPlayerId === hexId) {
+      setInspectedPlayerId(null);
+    } else {
+      setInspectedPlayerId(hexId);
+    }
+  }, [myIdentity, isMyIdentity, inspectedPlayerId]);
+
+  const handleClearInspection = useCallback(() => {
+    setInspectedPlayerId(null);
   }, []);
 
   const handleInitialize = useCallback((strategy: string = 'fresh', championId: number = 0) => {
@@ -303,6 +372,10 @@ export default function App() {
     setFollowMode((prev) => !prev);
   }, []);
 
+  const handleToggleView = useCallback(() => {
+    setViewMode((prev) => prev === 'tee' ? 'green' : 'tee');
+  }, []);
+
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#081828', position: 'relative' }}>
       {!isActive && (
@@ -335,13 +408,16 @@ export default function App() {
         generations={generations}
         myIdentity={myIdentity}
         isMyIdentity={isMyIdentity}
+        allBalls={balls}
+        onSelectPlayer={handleSelectPlayer}
+        selectedPlayerId={inspectedPlayerId}
       />
 
       {/* Minimap */}
       {!hofMode && gamePhase === 'playing' && (
         <Minimap
           course={course}
-          allBalls={allActiveBalls}
+          allBalls={filteredBalls}
           myIdentity={myIdentity}
           playerColorMap={playerColorMap}
         />
@@ -353,29 +429,39 @@ export default function App() {
           <GPControlPanel
             phase={currentGen?.phase ?? null}
             genNumber={currentGen?.genNumber ?? null}
-            bestFitness={currentGen?.bestFitness ?? null}
-            avgFitness={currentGen?.avgFitness ?? null}
             hasPopulation={myGenerations.length > 0}
             autoEvolving={autoEvolving}
             speedMultiplier={speedMultiplier}
             hofCount={hofEntries.length}
             followMode={followMode}
+            showMySwarm={showMySwarm}
+            viewMode={viewMode}
             onInitialize={() => handleInitialize('fresh')}
             onNextGen={handleNextGen}
             onToggleAutoEvolve={handleToggleAutoEvolve}
             onSpeedChange={setSpeedMultiplier}
             onOpenHof={handleOpenHof}
             onToggleFollow={handleToggleFollow}
+            onToggleSwarm={() => setShowMySwarm(prev => !prev)}
+            onToggleView={handleToggleView}
           />
           <FitnessChart generations={sortedGens} />
           <EventLog events={sortedEvents} />
-          <GenomeTreePanel
-            genome={selectedGenome}
+          <SwingLab
+            genome={inspectedPlayerData?.genome ?? effectiveGenome}
             genomes={currentGenGenomes}
-            selectedGenomeId={selectedGenomeId}
+            selectedGenomeId={effectiveGenomeId}
+            isAutoSelected={isAutoSelected && !inspectedPlayerData}
             onSelectGenome={handleSelectGenome}
             onSponsor={handleSponsor}
-            sponsorDisabled={selectedGenomeId == null}
+            sponsorDisabled={effectiveGenomeId == null}
+            windX={course?.windX ?? 0}
+            windZ={course?.windZ ?? 0}
+            bestDistance={bestBall?.distanceToHole ?? null}
+            selectedDistance={inspectedPlayerData?.distance ?? selectedBallDistance}
+            genNumber={currentGen?.genNumber ?? null}
+            inspectedPlayerName={inspectedPlayerData?.playerName ?? null}
+            onClearInspection={handleClearInspection}
           />
         </>
       )}
@@ -439,7 +525,7 @@ export default function App() {
             <BallSwarm
               selectedGenomeId={selectedGenomeId}
               onSelectGenome={handleSelectGenome}
-              allBalls={allActiveBalls}
+              allBalls={filteredBalls}
               myIdentity={myIdentity}
               playerColorMap={playerColorMap}
               playerNameMap={playerNameMap}
@@ -447,7 +533,7 @@ export default function App() {
             />
             <TrajectoryLines
               selectedGenomeId={selectedGenomeId}
-              allBalls={allActiveBalls}
+              allBalls={filteredBalls}
               myIdentity={myIdentity}
               playerColorMap={playerColorMap}
             />
@@ -459,6 +545,8 @@ export default function App() {
           bestBallPosition={bestBallPosition}
           courseCenter={courseCenter}
           isRotating={gamePhase === 'rotating'}
+          viewMode={viewMode}
+          holePosition={holePosition}
         />
       </Canvas>
     </div>

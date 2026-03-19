@@ -23,5 +23,9 @@ export const DEFAULT_MUTATION_RATE = 0.5;
 export const DEFAULT_TOURNAMENT_SIZE = 4;
 export const STAGNATION_GENS = 10;          // gens without improvement to trigger shake-up
 export const STAGNATION_MUTATION_RATE = 0.8; // boosted mutation rate during stagnation
+export const ELITE_MUTATION_SLOTS = 4;
+export const ELITE_CROSSOVER_SLOTS = 1;
+export const EXPLORATION_SLOTS = 6;
+// Total: 1 + 4 + 1 + 6 = 12 = DEFAULT_POP_SIZE
 export const FITNESS_UNEVAL = -1;           // sentinel: unevaluated fitness
 export const HOLE_RADIUS = 0.5;             // yards, win threshold
